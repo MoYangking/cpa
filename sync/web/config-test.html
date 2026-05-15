@@ -200,7 +200,7 @@
 
         .probe-grid {
             display: grid;
-            grid-template-columns: minmax(220px, 280px) minmax(220px, 1fr) auto;
+            grid-template-columns: minmax(220px, 280px) minmax(220px, 1fr) minmax(220px, 280px);
             gap: 12px;
             align-items: end;
         }
@@ -333,7 +333,8 @@
                     <h2 class="probe-title">Internal management auth probe</h2>
                     <p class="probe-note">
                         This sends a request from inside the container to <code>127.0.0.1:8317</code>.
-                        If this also returns <code>401</code>, the problem is inside CLIProxyAPI rather than outer nginx or your browser proxy.
+                        Compare the local probe with the simulated remote probe. If local is <code>200</code> but simulated remote becomes <code>403</code>,
+                        CLIProxyAPI is still treating remote management as forbidden at runtime.
                     </p>
                     <div class="probe-grid">
                         <div class="field">
@@ -344,8 +345,23 @@
                             <label for="probePathInput">Probe path</label>
                             <input id="probePathInput" type="text" value="/v0/management/config" />
                         </div>
+                        <div class="field">
+                            <label for="probeRemoteIpInput">Simulated remote IP</label>
+                            <input id="probeRemoteIpInput" type="text" value="8.8.8.8" />
+                        </div>
+                    </div>
+                    <div class="probe-grid" style="margin-top: 12px;">
+                        <div class="field">
+                            <label for="probeHostInput">Forwarded host</label>
+                            <input id="probeHostInput" type="text" placeholder="Optional, for example moyang303-cpa.ms.show" />
+                        </div>
+                        <div class="field">
+                            <label for="probeProtoInput">Forwarded proto</label>
+                            <input id="probeProtoInput" type="text" value="https" />
+                        </div>
                         <div class="probe-actions">
-                            <button id="probeBtn" class="secondary" type="button">Run Probe</button>
+                            <button id="probeBtn" class="secondary" type="button">Run Local Probe</button>
+                            <button id="probeRemoteBtn" class="secondary" type="button">Run Remote Probe</button>
                         </div>
                     </div>
                     <div class="probe-result">
@@ -376,7 +392,11 @@
         const modeValue = document.getElementById("modeValue");
         const probeKeyInput = document.getElementById("probeKeyInput");
         const probePathInput = document.getElementById("probePathInput");
+        const probeRemoteIpInput = document.getElementById("probeRemoteIpInput");
+        const probeHostInput = document.getElementById("probeHostInput");
+        const probeProtoInput = document.getElementById("probeProtoInput");
         const probeBtn = document.getElementById("probeBtn");
+        const probeRemoteBtn = document.getElementById("probeRemoteBtn");
         const probeOutput = document.getElementById("probeOutput");
 
         function setStatus(message, ok) {
@@ -432,9 +452,12 @@
             }
         }
 
-        async function runProbe() {
+        async function runProbe(simulateRemote) {
             const key = probeKeyInput.value.trim();
             const path = probePathInput.value.trim() || "/v0/management/config";
+            const remoteIp = simulateRemote ? probeRemoteIpInput.value.trim() : "";
+            const forwardedHost = simulateRemote ? probeHostInput.value.trim() : "";
+            const forwardedProto = simulateRemote ? probeProtoInput.value.trim() : "";
 
             if (!key) {
                 setStatus("Enter the plaintext management key before running the probe.", false);
@@ -442,7 +465,9 @@
                 return;
             }
 
-            probeOutput.textContent = "Running internal probe...";
+            probeOutput.textContent = simulateRemote
+                ? "Running simulated remote probe..."
+                : "Running local probe...";
             try {
                 const response = await fetch("/sync/api/debug/management-auth-check", {
                     method: "POST",
@@ -450,7 +475,13 @@
                         "Content-Type": "application/json"
                     },
                     credentials: "same-origin",
-                    body: JSON.stringify({ key, path })
+                    body: JSON.stringify({
+                        key,
+                        path,
+                        remote_ip: remoteIp,
+                        forwarded_host: forwardedHost,
+                        forwarded_proto: forwardedProto
+                    })
                 });
 
                 const data = await response.json();
@@ -463,7 +494,12 @@
                 const status = data.response && typeof data.response.status !== "undefined"
                     ? data.response.status
                     : "unknown";
-                setStatus(`Internal probe completed with status ${status}.`, true);
+                setStatus(
+                    simulateRemote
+                        ? `Simulated remote probe completed with status ${status}.`
+                        : `Local probe completed with status ${status}.`,
+                    true
+                );
             } catch (error) {
                 setStatus(`Probe error: ${error.message}`, false);
             }
@@ -472,7 +508,8 @@
         refreshBtn.addEventListener("click", loadConfig);
         rawToggle.addEventListener("change", loadConfig);
         copyBtn.addEventListener("click", copyContent);
-        probeBtn.addEventListener("click", runProbe);
+        probeBtn.addEventListener("click", () => runProbe(false));
+        probeRemoteBtn.addEventListener("click", () => runProbe(true));
 
         loadConfig();
     </script>

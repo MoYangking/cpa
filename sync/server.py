@@ -145,21 +145,43 @@ def _normalize_probe_path(path: str) -> str:
     return path
 
 
-def _run_management_probe(key: str, path: str = "/v0/management/config", timeout: int = 15) -> Dict[str, object]:
+def _run_management_probe(
+    key: str,
+    path: str = "/v0/management/config",
+    timeout: int = 15,
+    remote_ip: str = "",
+    forwarded_host: str = "",
+    forwarded_proto: str = "",
+) -> Dict[str, object]:
     key = (key or "").strip()
     if not key:
         raise ValueError("Management key is required")
 
     path = _normalize_probe_path(path)
     url = f"{CLI_PROXY_API_INTERNAL_BASE}{path}"
+    remote_ip = (remote_ip or "").strip()
+    forwarded_host = (forwarded_host or "").strip()
+    forwarded_proto = (forwarded_proto or "").strip()
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent": "sync-debug-probe/1.0",
+    }
+
+    if remote_ip:
+        headers["X-Real-IP"] = remote_ip
+        headers["X-Forwarded-For"] = remote_ip
+    if forwarded_host:
+        headers["X-Forwarded-Host"] = forwarded_host
+        headers["Host"] = forwarded_host
+    if forwarded_proto:
+        headers["X-Forwarded-Proto"] = forwarded_proto
+
     req = urllib.request.Request(
         url,
         method="GET",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Accept": "application/json, text/plain, */*",
-            "User-Agent": "sync-debug-probe/1.0",
-        },
+        headers=headers,
     )
 
     try:
@@ -186,6 +208,10 @@ def _run_management_probe(key: str, path: str = "/v0/management/config", timeout
             "url": url,
             "path": path,
             "authorization": f"Bearer {_mask_value(key)}",
+            "x_real_ip": remote_ip,
+            "x_forwarded_for": remote_ip,
+            "x_forwarded_host": forwarded_host,
+            "x_forwarded_proto": forwarded_proto,
         },
         "response": {
             "status": status,
@@ -285,7 +311,17 @@ def create_app(daemon=None):
             key = str(payload.get("key", ""))
             path = str(payload.get("path", "/v0/management/config"))
             timeout = int(payload.get("timeout", 15))
-            result = _run_management_probe(key=key, path=path, timeout=timeout)
+            remote_ip = str(payload.get("remote_ip", ""))
+            forwarded_host = str(payload.get("forwarded_host", ""))
+            forwarded_proto = str(payload.get("forwarded_proto", ""))
+            result = _run_management_probe(
+                key=key,
+                path=path,
+                timeout=timeout,
+                remote_ip=remote_ip,
+                forwarded_host=forwarded_host,
+                forwarded_proto=forwarded_proto,
+            )
             return {"ok": True, **result}
         except ValueError as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
