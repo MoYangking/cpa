@@ -176,6 +176,72 @@
             padding: 0 28px 28px;
         }
 
+        .probe-wrap {
+            padding: 0 28px 24px;
+        }
+
+        .probe-panel {
+            border-radius: 18px;
+            background: rgba(2, 6, 23, 0.42);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+            padding: 18px;
+        }
+
+        .probe-title {
+            margin: 0 0 10px;
+            font-size: 18px;
+        }
+
+        .probe-note {
+            margin: 0 0 14px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .probe-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, 280px) minmax(220px, 1fr) auto;
+            gap: 12px;
+            align-items: end;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .field label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .field input {
+            width: 100%;
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text);
+            padding: 12px 14px;
+            font: inherit;
+        }
+
+        .probe-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .probe-result {
+            margin-top: 14px;
+        }
+
+        .probe-result pre {
+            min-height: 180px;
+        }
+
         pre {
             margin: 0;
             padding: 22px;
@@ -204,6 +270,7 @@
             .hero,
             .toolbar,
             .meta,
+            .probe-wrap,
             .code-wrap {
                 padding-left: 16px;
                 padding-right: 16px;
@@ -212,6 +279,10 @@
             .status {
                 margin-left: 16px;
                 margin-right: 16px;
+            }
+
+            .probe-grid {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -257,6 +328,32 @@
                 </div>
             </div>
 
+            <div class="probe-wrap">
+                <div class="probe-panel">
+                    <h2 class="probe-title">Internal management auth probe</h2>
+                    <p class="probe-note">
+                        This sends a request from inside the container to <code>127.0.0.1:8317</code>.
+                        If this also returns <code>401</code>, the problem is inside CLIProxyAPI rather than outer nginx or your browser proxy.
+                    </p>
+                    <div class="probe-grid">
+                        <div class="field">
+                            <label for="probeKeyInput">Management key</label>
+                            <input id="probeKeyInput" type="password" placeholder="Enter plaintext key, for example 303" />
+                        </div>
+                        <div class="field">
+                            <label for="probePathInput">Probe path</label>
+                            <input id="probePathInput" type="text" value="/v0/management/config" />
+                        </div>
+                        <div class="probe-actions">
+                            <button id="probeBtn" class="secondary" type="button">Run Probe</button>
+                        </div>
+                    </div>
+                    <div class="probe-result">
+                        <pre id="probeOutput">Probe has not been run yet.</pre>
+                    </div>
+                </div>
+            </div>
+
             <div id="statusBox" class="status ok">
                 Ready.
             </div>
@@ -277,6 +374,10 @@
         const sizeValue = document.getElementById("sizeValue");
         const timeValue = document.getElementById("timeValue");
         const modeValue = document.getElementById("modeValue");
+        const probeKeyInput = document.getElementById("probeKeyInput");
+        const probePathInput = document.getElementById("probePathInput");
+        const probeBtn = document.getElementById("probeBtn");
+        const probeOutput = document.getElementById("probeOutput");
 
         function setStatus(message, ok) {
             statusBox.textContent = message;
@@ -331,9 +432,47 @@
             }
         }
 
+        async function runProbe() {
+            const key = probeKeyInput.value.trim();
+            const path = probePathInput.value.trim() || "/v0/management/config";
+
+            if (!key) {
+                setStatus("Enter the plaintext management key before running the probe.", false);
+                probeOutput.textContent = "Missing key.";
+                return;
+            }
+
+            probeOutput.textContent = "Running internal probe...";
+            try {
+                const response = await fetch("/sync/api/debug/management-auth-check", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    credentials: "same-origin",
+                    body: JSON.stringify({ key, path })
+                });
+
+                const data = await response.json();
+                probeOutput.textContent = JSON.stringify(data, null, 2);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.error || `Probe failed with ${response.status}`);
+                }
+
+                const status = data.response && typeof data.response.status !== "undefined"
+                    ? data.response.status
+                    : "unknown";
+                setStatus(`Internal probe completed with status ${status}.`, true);
+            } catch (error) {
+                setStatus(`Probe error: ${error.message}`, false);
+            }
+        }
+
         refreshBtn.addEventListener("click", loadConfig);
         rawToggle.addEventListener("change", loadConfig);
         copyBtn.addEventListener("click", copyContent);
+        probeBtn.addEventListener("click", runProbe);
 
         loadConfig();
     </script>

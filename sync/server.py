@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import urllib.error
+import urllib.request
 from datetime import datetime
 from typing import Dict
 
@@ -25,6 +28,7 @@ from sync.utils.logging import log, err
 
 
 CLI_PROXY_API_CONFIG_FILE = os.environ.get("CLI_PROXY_API_CONFIG_FILE", "/CLIProxyAPI/config.yaml")
+CLI_PROXY_API_INTERNAL_BASE = os.environ.get("CLI_PROXY_API_INTERNAL_BASE", "http://127.0.0.1:8317")
 
 
 def _mask_value(value: str) -> str:
@@ -121,6 +125,77 @@ def _read_cli_proxy_api_config(raw: bool = False) -> Dict[str, object]:
     }
 
 
+def _read_response_body(resp) -> tuple[str, object | None]:
+    raw_bytes = resp.read()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    parsed = None
+    content_type = resp.headers.get("Content-Type", "")
+    if "json" in content_type.lower():
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+    return text, parsed
+
+
+def _normalize_probe_path(path: str) -> str:
+    path = (path or "/v0/management/config").strip()
+    if not path.startswith("/"):
+        path = "/" + path
+    return path
+
+
+def _run_management_probe(key: str, path: str = "/v0/management/config", timeout: int = 15) -> Dict[str, object]:
+    key = (key or "").strip()
+    if not key:
+        raise ValueError("Management key is required")
+
+    path = _normalize_probe_path(path)
+    url = f"{CLI_PROXY_API_INTERNAL_BASE}{path}"
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": "sync-debug-probe/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body_text, body_json = _read_response_body(resp)
+            status = resp.status
+            headers = dict(resp.headers.items())
+    except urllib.error.HTTPError as e:
+        body_text, body_json = _read_response_body(e)
+        status = e.code
+        headers = dict(e.headers.items())
+
+    interesting_headers = [
+        "Content-Type",
+        "Access-Control-Allow-Origin",
+        "X-Cpa-Version",
+        "X-Cpa-Build-Date",
+        "X-Cpa-Commit",
+        "Set-Cookie",
+    ]
+
+    return {
+        "request": {
+            "url": url,
+            "path": path,
+            "authorization": f"Bearer {_mask_value(key)}",
+        },
+        "response": {
+            "status": status,
+            "headers": {name: headers.get(name, "") for name in interesting_headers if headers.get(name)},
+            "body_text": body_text[:6000],
+            "body_json": body_json,
+        },
+    }
+
+
 def _remote_url(pat: str, repo: str) -> str:
     """构造 x-access-token 形式的 GitHub 远端 URL。"""
     return f"https://x-access-token:{pat}@github.com/{repo}.git"
@@ -200,6 +275,20 @@ def create_app(daemon=None):
                 },
                 status_code=404,
             )
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    @app.post("/sync/api/debug/management-auth-check")
+    def api_debug_management_auth_check(payload: dict):
+        """Probe CLIProxyAPI management auth from inside the container."""
+        try:
+            key = str(payload.get("key", ""))
+            path = str(payload.get("path", "/v0/management/config"))
+            timeout = int(payload.get("timeout", 15))
+            result = _run_management_probe(key=key, path=path, timeout=timeout)
+            return {"ok": True, **result}
+        except ValueError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
