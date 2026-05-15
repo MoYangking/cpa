@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Config Test</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --panel: rgba(15, 23, 42, 0.88);
+            --panel-border: rgba(148, 163, 184, 0.22);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #f59e0b;
+            --danger: #f87171;
+            --ok: #22c55e;
+            --code: #020617;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 32%),
+                radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 28%),
+                linear-gradient(160deg, #020617 0%, #0f172a 55%, #111827 100%);
+        }
+
+        .shell {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .panel {
+            border: 1px solid var(--panel-border);
+            background: var(--panel);
+            border-radius: 18px;
+            box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+            overflow: hidden;
+        }
+
+        .hero {
+            padding: 28px 28px 20px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent);
+            font-size: 12px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            margin: 12px 0 10px;
+            font-size: clamp(28px, 4vw, 40px);
+            line-height: 1.1;
+        }
+
+        .subtle {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            padding: 20px 28px 0;
+        }
+
+        button,
+        .link-btn {
+            border: 0;
+            border-radius: 999px;
+            padding: 11px 16px;
+            cursor: pointer;
+            font: inherit;
+            transition: transform 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+        }
+
+        button:hover,
+        .link-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .primary {
+            background: linear-gradient(135deg, var(--accent), #2563eb);
+            color: white;
+        }
+
+        .secondary {
+            background: rgba(15, 23, 42, 0.9);
+            color: var(--text);
+            border: 1px solid var(--panel-border);
+        }
+
+        .link-btn {
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            background: rgba(245, 158, 11, 0.14);
+            color: #fde68a;
+        }
+
+        label.toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid var(--panel-border);
+            color: var(--text);
+        }
+
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            padding: 20px 28px;
+        }
+
+        .meta-card {
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(2, 6, 23, 0.42);
+            border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+
+        .meta-label {
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .meta-value {
+            word-break: break-all;
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        .status {
+            margin: 0 28px 18px;
+            padding: 14px 16px;
+            border-radius: 14px;
+            line-height: 1.6;
+            border: 1px solid rgba(148, 163, 184, 0.14);
+        }
+
+        .status.ok {
+            background: rgba(34, 197, 94, 0.12);
+            color: #bbf7d0;
+        }
+
+        .status.error {
+            background: rgba(248, 113, 113, 0.12);
+            color: #fecaca;
+        }
+
+        .code-wrap {
+            padding: 0 28px 28px;
+        }
+
+        pre {
+            margin: 0;
+            padding: 22px;
+            min-height: 420px;
+            border-radius: 18px;
+            overflow: auto;
+            background: var(--code);
+            color: #dbeafe;
+            border: 1px solid rgba(56, 189, 248, 0.16);
+            font-size: 13px;
+            line-height: 1.55;
+            font-family: Consolas, "Courier New", monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .warn {
+            color: var(--accent-2);
+        }
+
+        @media (max-width: 640px) {
+            .shell {
+                padding: 14px;
+            }
+
+            .hero,
+            .toolbar,
+            .meta,
+            .code-wrap {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            .status {
+                margin-left: 16px;
+                margin-right: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <section class="panel">
+            <div class="hero">
+                <div class="eyebrow">Runtime Config Debug</div>
+                <h1>CLIProxyAPI config viewer</h1>
+                <p class="subtle">
+                    This page reads the current runtime file from the container through the sync service.
+                    Masked mode hides common secrets by default. Raw mode shows the file as-is.
+                </p>
+            </div>
+
+            <div class="toolbar">
+                <button id="refreshBtn" class="primary" type="button">Refresh</button>
+                <button id="copyBtn" class="secondary" type="button">Copy Content</button>
+                <label class="toggle">
+                    <input id="rawToggle" type="checkbox" />
+                    <span>Show raw content</span>
+                </label>
+                <a class="link-btn" href="/sync/" target="_self">Back to /sync/</a>
+            </div>
+
+            <div class="meta">
+                <div class="meta-card">
+                    <div class="meta-label">Path</div>
+                    <div id="pathValue" class="meta-value">-</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">Size</div>
+                    <div id="sizeValue" class="meta-value">-</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">Modified</div>
+                    <div id="timeValue" class="meta-value">-</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">Mode</div>
+                    <div id="modeValue" class="meta-value">masked</div>
+                </div>
+            </div>
+
+            <div id="statusBox" class="status ok">
+                Ready.
+            </div>
+
+            <div class="code-wrap">
+                <pre id="contentBox">Loading...</pre>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const refreshBtn = document.getElementById("refreshBtn");
+        const copyBtn = document.getElementById("copyBtn");
+        const rawToggle = document.getElementById("rawToggle");
+        const statusBox = document.getElementById("statusBox");
+        const contentBox = document.getElementById("contentBox");
+        const pathValue = document.getElementById("pathValue");
+        const sizeValue = document.getElementById("sizeValue");
+        const timeValue = document.getElementById("timeValue");
+        const modeValue = document.getElementById("modeValue");
+
+        function setStatus(message, ok) {
+            statusBox.textContent = message;
+            statusBox.className = "status " + (ok ? "ok" : "error");
+        }
+
+        async function loadConfig() {
+            const raw = rawToggle.checked;
+            modeValue.textContent = raw ? "raw" : "masked";
+            contentBox.textContent = "Loading...";
+            setStatus(raw
+                ? "Raw mode is enabled. Secrets may be visible on screen."
+                : "Masked mode is enabled.",
+                true);
+
+            try {
+                const response = await fetch(`/sync/api/debug/config-file?raw=${raw ? "1" : "0"}`, {
+                    credentials: "same-origin",
+                    cache: "no-store"
+                });
+
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.error || `Request failed with ${response.status}`);
+                }
+
+                pathValue.textContent = data.path || "-";
+                sizeValue.textContent = typeof data.size === "number" ? `${data.size} bytes` : "-";
+                timeValue.textContent = data.modified_at || "-";
+                contentBox.textContent = data.content || "";
+                setStatus(
+                    raw
+                        ? "Loaded current config in raw mode."
+                        : "Loaded current config in masked mode.",
+                    true
+                );
+            } catch (error) {
+                contentBox.textContent = "";
+                pathValue.textContent = "-";
+                sizeValue.textContent = "-";
+                timeValue.textContent = "-";
+                setStatus(`Failed to load config: ${error.message}`, false);
+            }
+        }
+
+        async function copyContent() {
+            try {
+                await navigator.clipboard.writeText(contentBox.textContent);
+                setStatus("Content copied to clipboard.", true);
+            } catch (error) {
+                setStatus(`Copy failed: ${error.message}`, false);
+            }
+        }
+
+        refreshBtn.addEventListener("click", loadConfig);
+        rawToggle.addEventListener("change", loadConfig);
+        copyBtn.addEventListener("click", copyContent);
+
+        loadConfig();
+    </script>
+</body>
+</html>

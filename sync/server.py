@@ -13,6 +13,8 @@ from __future__ import annotations
 """
 
 import os
+import re
+from datetime import datetime
 from typing import Dict
 
 from sync.core import git_ops
@@ -20,6 +22,103 @@ from sync.core.blacklist import ensure_git_info_exclude
 from sync.core.config import load_settings, save_file_overrides
 from sync.core.linker import migrate_and_link, precreate_dirlike, track_empty_dirs
 from sync.utils.logging import log, err
+
+
+CLI_PROXY_API_CONFIG_FILE = os.environ.get("CLI_PROXY_API_CONFIG_FILE", "/CLIProxyAPI/config.yaml")
+
+
+def _mask_value(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return value
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}...{value[-4:]}"
+
+
+def _mask_proxy_url(value: str) -> str:
+    value = value.strip()
+    if "://" not in value or "@" not in value:
+        return value
+
+    match = re.match(r"^([a-zA-Z0-9+.-]+://)([^@]+)@(.+)$", value)
+    if not match:
+        return value
+
+    scheme, credentials, host = match.groups()
+    if ":" in credentials:
+        username, password = credentials.split(":", 1)
+        masked_creds = f"{_mask_value(username)}:{_mask_value(password)}"
+    else:
+        masked_creds = _mask_value(credentials)
+    return f"{scheme}{masked_creds}@{host}"
+
+
+def _mask_config_text(text: str) -> str:
+    masked_lines = []
+    in_sensitive_sequence = False
+    sensitive_sequence_indent = -1
+
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if in_sensitive_sequence and stripped and not stripped.startswith("#"):
+            if indent <= sensitive_sequence_indent and not stripped.startswith("-"):
+                in_sensitive_sequence = False
+
+        if re.match(r"^\s*api-keys:\s*$", line):
+            in_sensitive_sequence = True
+            sensitive_sequence_indent = indent
+            masked_lines.append(line)
+            continue
+
+        if in_sensitive_sequence and re.match(r"^\s*-\s*.+$", line):
+            prefix, value = line.split("-", 1)
+            raw_value = value.strip().strip("\"'")
+            masked_lines.append(f"{prefix}- \"{_mask_value(raw_value)}\"")
+            continue
+
+        scalar_patterns = {
+            "secret-key": lambda value: value if value.startswith("$2") else _mask_value(value),
+            "proxy-url": _mask_proxy_url,
+            "api-key": _mask_value,
+            "password": _mask_value,
+            "token": _mask_value,
+        }
+
+        replaced = False
+        for key, masker in scalar_patterns.items():
+            pattern = rf"^(\s*{re.escape(key)}:\s*)(['\"]?)(.*?)(\2)\s*$"
+            match = re.match(pattern, line)
+            if not match:
+                continue
+            prefix, quote, value, _ = match.groups()
+            masked_value = masker(value)
+            masked_lines.append(f"{prefix}{quote}{masked_value}{quote}")
+            replaced = True
+            break
+
+        if not replaced:
+            masked_lines.append(line)
+
+    return "\n".join(masked_lines)
+
+
+def _read_cli_proxy_api_config(raw: bool = False) -> Dict[str, object]:
+    path = CLI_PROXY_API_CONFIG_FILE
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    stat = os.stat(path)
+    return {
+        "path": path,
+        "exists": True,
+        "size": stat.st_size,
+        "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "content": content if raw else _mask_config_text(content),
+        "raw": raw,
+    }
 
 
 def _remote_url(pat: str, repo: str) -> str:
@@ -86,6 +185,23 @@ def create_app(daemon=None):
             "remote_head": rhead,
             "progress": progress,
         }
+
+    @app.get("/sync/api/debug/config-file")
+    def api_debug_config_file(raw: bool = False):
+        """Return the current CLIProxyAPI config file for browser-side inspection."""
+        try:
+            return {"ok": True, **_read_cli_proxy_api_config(raw=raw)}
+        except FileNotFoundError:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "path": CLI_PROXY_API_CONFIG_FILE,
+                    "error": "Config file not found",
+                },
+                status_code=404,
+            )
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
     @app.post("/sync/api/init")
     def api_init():
