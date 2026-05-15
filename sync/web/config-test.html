@@ -180,6 +180,10 @@
             padding: 0 28px 24px;
         }
 
+        .browser-wrap {
+            padding: 0 28px 24px;
+        }
+
         .probe-panel {
             border-radius: 18px;
             background: rgba(2, 6, 23, 0.42);
@@ -242,6 +246,19 @@
             min-height: 180px;
         }
 
+        .browser-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, 280px) minmax(220px, 1fr) auto;
+            gap: 12px;
+            align-items: end;
+        }
+
+        .browser-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         pre {
             margin: 0;
             padding: 22px;
@@ -271,6 +288,7 @@
             .toolbar,
             .meta,
             .probe-wrap,
+            .browser-wrap,
             .code-wrap {
                 padding-left: 16px;
                 padding-right: 16px;
@@ -282,6 +300,10 @@
             }
 
             .probe-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .browser-grid {
                 grid-template-columns: 1fr;
             }
         }
@@ -370,6 +392,34 @@
                 </div>
             </div>
 
+            <div class="browser-wrap">
+                <div class="probe-panel">
+                    <h2 class="probe-title">Browser direct fetch</h2>
+                    <p class="probe-note">
+                        This test is sent by your browser directly to <code>/v0/management/config</code>.
+                        Compare requests with cookies included versus omitted. If omit works but include fails,
+                        stale browser cookies or session state are the real cause.
+                    </p>
+                    <div class="browser-grid">
+                        <div class="field">
+                            <label for="browserKeyInput">Management key</label>
+                            <input id="browserKeyInput" type="password" placeholder="Enter plaintext key, for example 303" />
+                        </div>
+                        <div class="field">
+                            <label for="browserPathInput">Browser path</label>
+                            <input id="browserPathInput" type="text" value="/v0/management/config" />
+                        </div>
+                        <div class="browser-actions">
+                            <button id="browserIncludeBtn" class="secondary" type="button">Fetch With Cookies</button>
+                            <button id="browserOmitBtn" class="secondary" type="button">Fetch Without Cookies</button>
+                        </div>
+                    </div>
+                    <div class="probe-result">
+                        <pre id="browserOutput">Browser direct fetch has not been run yet.</pre>
+                    </div>
+                </div>
+            </div>
+
             <div id="statusBox" class="status ok">
                 Ready.
             </div>
@@ -398,6 +448,11 @@
         const probeBtn = document.getElementById("probeBtn");
         const probeRemoteBtn = document.getElementById("probeRemoteBtn");
         const probeOutput = document.getElementById("probeOutput");
+        const browserKeyInput = document.getElementById("browserKeyInput");
+        const browserPathInput = document.getElementById("browserPathInput");
+        const browserIncludeBtn = document.getElementById("browserIncludeBtn");
+        const browserOmitBtn = document.getElementById("browserOmitBtn");
+        const browserOutput = document.getElementById("browserOutput");
 
         function setStatus(message, ok) {
             statusBox.textContent = message;
@@ -505,11 +560,90 @@
             }
         }
 
+        async function runBrowserFetch(includeCookies) {
+            const key = browserKeyInput.value.trim();
+            const path = browserPathInput.value.trim() || "/v0/management/config";
+
+            if (!key) {
+                setStatus("Enter the plaintext management key before running the browser fetch.", false);
+                browserOutput.textContent = "Missing key.";
+                return;
+            }
+
+            browserOutput.textContent = includeCookies
+                ? "Running browser fetch with cookies..."
+                : "Running browser fetch without cookies...";
+
+            try {
+                const response = await fetch(path, {
+                    method: "GET",
+                    headers: {
+                        "Accept": "application/json, text/plain, */*",
+                        "Authorization": `Bearer ${key}`,
+                        "Cache-Control": "no-cache",
+                        "Pragma": "no-cache"
+                    },
+                    credentials: includeCookies ? "include" : "omit",
+                    cache: "no-store"
+                });
+
+                const text = await response.text();
+                const headers = {};
+                [
+                    "content-type",
+                    "set-cookie",
+                    "x-cpa-version",
+                    "x-cpa-build-date",
+                    "x-cpa-commit",
+                    "x-eas-instance",
+                    "access-control-allow-origin"
+                ].forEach((name) => {
+                    const value = response.headers.get(name);
+                    if (value) {
+                        headers[name] = value;
+                    }
+                });
+
+                let parsed = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (error) {
+                    parsed = null;
+                }
+
+                browserOutput.textContent = JSON.stringify({
+                    request: {
+                        path,
+                        credentials: includeCookies ? "include" : "omit",
+                        authorization: "Bearer ****"
+                    },
+                    response: {
+                        status: response.status,
+                        ok: response.ok,
+                        headers,
+                        body_text: text,
+                        body_json: parsed
+                    }
+                }, null, 2);
+
+                setStatus(
+                    includeCookies
+                        ? `Browser fetch with cookies completed with status ${response.status}.`
+                        : `Browser fetch without cookies completed with status ${response.status}.`,
+                    true
+                );
+            } catch (error) {
+                setStatus(`Browser fetch error: ${error.message}`, false);
+            }
+        }
+
         refreshBtn.addEventListener("click", loadConfig);
         rawToggle.addEventListener("change", loadConfig);
         copyBtn.addEventListener("click", copyContent);
         probeBtn.addEventListener("click", () => runProbe(false));
         probeRemoteBtn.addEventListener("click", () => runProbe(true));
+        browserIncludeBtn.addEventListener("click", () => runBrowserFetch(true));
+        browserOmitBtn.addEventListener("click", () => runBrowserFetch(false));
 
         loadConfig();
     </script>
