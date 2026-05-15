@@ -1,76 +1,76 @@
 # CLIProxyAPI + Sync Container
 
-This repository used to package `NapCat + MaiBot + Sync` in a single container. It has now been refactored to use [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) instead, and the old `maibot`, `maim-bot-adapters`, `sin-proxy`, `napcat`, and `xvfb` stack has been removed.
+This repository used to package `NapCat + MaiBot + Sync` in a single container. It now uses [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) as the core service, removes the old `maibot`, `maim-bot-adapters`, `sin-proxy`, `napcat`, and `xvfb` stack, and keeps `filebrowser` plus `gotty` as operational tools.
 
-## What this repo does now
+## Included services
 
-This is a container wrapper around CLIProxyAPI with three responsibilities:
+- `CLIProxyAPI`: OpenAI / Gemini / Claude / Codex compatible proxy
+- `sync`: optional GitHub-backed persistence
+- `nginx`: unified entrypoint on port `7860`
+- `filebrowser`: file manager at `/filebrowser/`
+- `gotty`: web terminal at `/t/`
 
-- run `CLIProxyAPI`
-- expose a single `7860` entrypoint with `nginx`
-- optionally persist key data through the existing GitHub-backed `sync` service
+## Backup and persistence paths
 
-It is not the upstream CLIProxyAPI source repository. The image clones and builds upstream CLIProxyAPI during Docker build time.
-
-## Preserved paths
-
-The default persisted targets are now:
+Before starting CLIProxyAPI, the container backs up:
 
 - `/root/.cli-proxy-api/`
 - `/CLIProxyAPI/config.yaml`
 
-Before CLIProxyAPI starts, the container backs up any existing contents from those paths into `/CLIProxyAPI/backups/<timestamp>/`.
+Backups are stored under:
 
-## Ports
+- `/CLIProxyAPI/backups/<timestamp>/`
 
-- `7860`: unified entrypoint; `/sync/` goes to the sync UI, everything else goes to CLIProxyAPI
-- `8317`: direct CLIProxyAPI port
-- `5321`: direct sync service port
+Default sync targets now include:
 
-For OAuth callback compatibility with upstream CLIProxyAPI, the image also exposes:
+- `/root/.cli-proxy-api/`
+- `/CLIProxyAPI/config.yaml`
+- `/home/user/filebrowser-data/filebrowser.db`
 
+The `filebrowser` database is included again so its state survives sync-enabled deployments.
+
+## Entry points
+
+- `7860`: unified entrypoint
+- `/sync/`: sync UI
+- `/filebrowser/`: file manager
+- `/t/`: web terminal
+- everything else: proxied to `CLIProxyAPI`
+
+Direct CLIProxyAPI and OAuth callback related ports are also kept:
+
+- `8317`
 - `8085`
 - `1455`
 - `54545`
 - `51121`
 - `11451`
 
-## Sync behavior
-
-Sync is optional now:
-
-- if `GITHUB_REPO` and `GITHUB_PAT` are set, the container waits for the first sync before starting CLIProxyAPI
-- if they are not set, sync is skipped and CLIProxyAPI starts immediately
-
 ## Environment variables
 
-| Name | Required | Default | Description |
-| --- | --- | --- | --- |
-| `GITHUB_REPO` | No | empty | Persistence repo in `owner/repo` format |
-| `GITHUB_PAT` | No | empty | GitHub token |
-| `GIT_BRANCH` | No | `main` | Sync branch |
-| `HIST_DIR` | No | `/home/user/.sync-backup` | Local sync checkout path |
-| `SYNC_INTERVAL` | No | `180` | Periodic sync interval in seconds |
-| `SYNC_WAIT_TIMEOUT` | No | `1800` | Max wait time before service startup; set `0` to disable waiting |
-| `TZ` | No | `Asia/Shanghai` | Container timezone |
-| `DEPLOY` | No | empty | Set to `cloud` when you want CLIProxyAPI cloud deploy behavior |
+Sync:
 
-If `/CLIProxyAPI/config.yaml` is missing or empty, the startup script seeds it from upstream `config.example.yaml`.
+| Name | Default | Description |
+| --- | --- | --- |
+| `GITHUB_REPO` | empty | Persistence repo in `owner/repo` format |
+| `GITHUB_PAT` | empty | GitHub token |
+| `GIT_BRANCH` | `main` | Sync branch |
+| `HIST_DIR` | `/home/user/.sync-backup` | Local sync checkout path |
+| `SYNC_INTERVAL` | `180` | Periodic sync interval in seconds |
+| `SYNC_WAIT_TIMEOUT` | `1800` | Max wait before service startup; `0` disables waiting |
 
-## Local Docker
+CLIProxyAPI:
 
-```bash
-docker build -t cliproxyapi-sync:latest .
-docker run -d \
-  -p 7860:7860 \
-  -p 8317:8317 \
-  -p 8085:8085 \
-  -p 1455:1455 \
-  -p 54545:54545 \
-  -p 51121:51121 \
-  -p 11451:11451 \
-  --name cliproxyapi \
-  cliproxyapi-sync:latest
-```
+| Name | Default | Description |
+| --- | --- | --- |
+| `TZ` | `Asia/Shanghai` | Container timezone |
+| `DEPLOY` | empty | Set to `cloud` for CLIProxyAPI cloud deploy mode |
 
-Add `GITHUB_REPO` and `GITHUB_PAT` only if you want GitHub-backed persistence.
+GoTTY:
+
+| Name | Default | Description |
+| --- | --- | --- |
+| `GOTTY_USERNAME` | `admin` | Username for `/t/` |
+| `GOTTY_PASSWORD` | `adminadminadmin` | Password for `/t/` |
+
+If `/CLIProxyAPI/config.yaml` is missing or empty, startup seeds it from upstream `config.example.yaml`.

@@ -26,6 +26,7 @@ DEFAULT_TARGETS = (
             [
                 "root/.cli-proxy-api/",
                 "CLIProxyAPI/config.yaml",
+                "home/user/filebrowser-data/filebrowser.db",
             ]
         ),
     )

@@ -54,12 +54,37 @@ RUN python3 -m venv "$VIRTUAL_ENV" && \
     "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip && \
     "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --index-url "${PIP_INDEX_URL}" fastapi uvicorn httpx
 
+RUN mkdir -p /home/user
+
 COPY --from=cliproxy-builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 COPY --from=cliproxy-builder /out/config.example.yaml /CLIProxyAPI/config.example.yaml
+
+RUN set -eux; \
+    FILEBROWSER_URL="$(curl -fsSL https://api.github.com/repos/filebrowser/filebrowser/releases/latest | \
+      jq -r '.assets[] | select(.name | contains("linux-amd64-filebrowser.tar.gz")) | .browser_download_url' | \
+      head -n 1 | tr -d '\r')"; \
+    test -n "${FILEBROWSER_URL}"; \
+    curl -fL -o /tmp/filebrowser.tar.gz "${FILEBROWSER_URL}"; \
+    tar -xzf /tmp/filebrowser.tar.gz -C /tmp; \
+    mv /tmp/filebrowser /home/user/filebrowser; \
+    chmod +x /home/user/filebrowser; \
+    rm -f /tmp/filebrowser.tar.gz
+
+RUN set -eux; \
+    GOTTY_URL="$(curl -fsSL https://api.github.com/repos/sorenisanerd/gotty/releases/latest | \
+      jq -r '.assets[] | select(.name | test("gotty_v.*_linux_amd64\\.tar\\.gz$")) | .browser_download_url' | \
+      head -n 1 | tr -d '\r')"; \
+    test -n "${GOTTY_URL}"; \
+    curl -fL -o /tmp/gotty.tar.gz "${GOTTY_URL}"; \
+    tar -xzf /tmp/gotty.tar.gz -C /tmp; \
+    mv /tmp/gotty /home/user/gotty; \
+    chmod +x /home/user/gotty; \
+    rm -f /tmp/gotty.tar.gz
 
 RUN mkdir -p \
       /CLIProxyAPI/backups \
       /CLIProxyAPI/logs \
+      /home/user/filebrowser-data \
       /home/user \
       /home/user/.sync-backup \
       /home/user/scripts \
@@ -76,6 +101,6 @@ COPY scripts/wait-for-sync.sh /home/user/scripts/wait-for-sync.sh
 RUN sed -i 's/\r$//' /home/user/scripts/*.sh && \
     chmod +x /home/user/scripts/*.sh
 
-EXPOSE 7860 8317 8085 1455 54545 51121 11451 5321
+EXPOSE 7860 8317 8085 8888 8080 1455 54545 51121 11451 5321
 
 CMD ["supervisord", "-c", "/home/user/supervisord.conf"]

@@ -2,87 +2,89 @@
 
 # CLIProxyAPI + Sync 持久化容器
 
-这个仓库原来是一个 `NapCat + MaiBot + Sync` 的单容器网关。现在已经改成以 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 为核心，保留原来的 GitHub 同步持久化能力，并删除了 `maibot`、`maim-bot-adapters`、`sin-proxy`、`napcat`、`xvfb` 相关运行栈。
+这个仓库原来是一个 `NapCat + MaiBot + Sync` 的单容器网关。现在已经改成以 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 为核心，删除了 `maibot`、`maim-bot-adapters`、`sin-proxy`、`napcat`、`xvfb` 相关运行栈，同时保留了 `filebrowser` 和 `gotty` 作为运维工具。
 
-## 这个项目现在有什么用
+## 现在包含哪些服务
 
-它提供一个可直接用于本地 Docker 或 Hugging Face Spaces 的单容器方案，容器里只有三块核心能力：
-
-- `CLIProxyAPI`：提供 OpenAI / Gemini / Claude / Codex 兼容的代理接口
-- `nginx`：对外统一暴露 `7860`，把 `/sync/` 转给同步管理页，其余请求转给 `CLIProxyAPI`
-- `sync`：可选的 GitHub 持久化服务，用来同步关键配置与认证数据
+- `CLIProxyAPI`：提供 OpenAI / Gemini / Claude / Codex 兼容代理
+- `sync`：可选的 GitHub 持久化服务
+- `nginx`：统一入口，监听 `7860`
+- `filebrowser`：文件管理界面，入口 `/filebrowser/`
+- `gotty`：Web 终端，入口 `/t/`
 
 上游项目：
 
 - CLIProxyAPI: https://github.com/router-for-me/CLIProxyAPI
 
-## 已保留和备份的关键路径
+## 关键备份与持久化路径
 
-默认持久化目标已经改成：
+启动 `CLIProxyAPI` 前会先备份这两个路径：
 
 - `/root/.cli-proxy-api/`
 - `/CLIProxyAPI/config.yaml`
 
-容器启动 `CLIProxyAPI` 前，会先把这两个路径当前存在的内容备份到 `/CLIProxyAPI/backups/<timestamp>/`，然后再继续启动。
+备份位置：
 
-如果配置了 GitHub 同步，这两个路径还会通过 `sync` 自动迁移到同步仓库并建立符号链接。
+- `/CLIProxyAPI/backups/<timestamp>/`
 
-## 端口与入口
+默认同步目标现在包括：
 
-常用入口：
+- `/root/.cli-proxy-api/`
+- `/CLIProxyAPI/config.yaml`
+- `/home/user/filebrowser-data/filebrowser.db`
 
-- `7860`：统一入口。`/sync/` 是同步管理页，其余路径转发到 `CLIProxyAPI`
-- `8317`：直接访问 `CLIProxyAPI`
-- `5321`：直接访问 `sync` 管理服务
+其中 `filebrowser` 的数据库被重新纳入同步，方便保留登录状态和配置。
 
-为了兼容 `CLIProxyAPI` 的 OAuth 回调场景，镜像也暴露了这些上游默认端口：
+## 入口
 
+- `7860`：统一入口
+- `/sync/`：同步管理页
+- `/filebrowser/`：文件管理
+- `/t/`：Web 终端
+- 其余路径：转发到 `CLIProxyAPI`
+
+也保留了 `CLIProxyAPI` 的直接端口和 OAuth 回调端口：
+
+- `8317`
 - `8085`
 - `1455`
 - `54545`
 - `51121`
 - `11451`
 
-## Sync 持久化
+## 环境变量
 
-`sync` 现在是可选的：
+同步相关：
 
-- 如果设置了 `GITHUB_REPO` 和 `GITHUB_PAT`，容器会先完成同步，再启动 `CLIProxyAPI`
-- 如果没有设置，`sync` 会自动跳过，`CLIProxyAPI` 直接启动
+| 名称 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GITHUB_REPO` | 空 | 持久化仓库，格式 `owner/repo` |
+| `GITHUB_PAT` | 空 | GitHub Token |
+| `GIT_BRANCH` | `main` | 同步分支 |
+| `HIST_DIR` | `/home/user/.sync-backup` | 同步仓库本地目录 |
+| `SYNC_INTERVAL` | `180` | 周期同步间隔（秒） |
+| `SYNC_WAIT_TIMEOUT` | `1800` | 业务服务等待首次同步的最长时间；`0` 表示不等待 |
 
-相关环境变量：
+CLIProxyAPI 相关：
 
-| 名称 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `GITHUB_REPO` | 否 | 空 | 持久化仓库，格式 `owner/repo` |
-| `GITHUB_PAT` | 否 | 空 | GitHub Token |
-| `GIT_BRANCH` | 否 | `main` | 同步分支 |
-| `HIST_DIR` | 否 | `/home/user/.sync-backup` | 同步仓库本地目录 |
-| `SYNC_INTERVAL` | 否 | `180` | 周期同步间隔（秒） |
-| `SYNC_WAIT_TIMEOUT` | 否 | `1800` | 业务服务等待首次同步的最长时间；设为 `0` 表示不等待 |
-| `SYNC_TARGETS` | 否 | 见 `sync/core/config.py` | 自定义同步目标 |
-| `EXCLUDE_PATHS` | 否 | 空 | 自定义排除路径 |
+| 名称 | 默认值 | 说明 |
+| --- | --- | --- |
+| `TZ` | `Asia/Shanghai` | 容器时区 |
+| `DEPLOY` | 空 | 设为 `cloud` 时启用 CLIProxyAPI 云部署模式 |
 
-## CLIProxyAPI 相关环境变量
+GoTTY 相关：
 
-| 名称 | 必填 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `TZ` | 否 | `Asia/Shanghai` | 容器时区 |
-| `DEPLOY` | 否 | 空 | 需要云部署兼容模式时可设为 `cloud` |
+| 名称 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GOTTY_USERNAME` | `admin` | `/t/` 登录用户名 |
+| `GOTTY_PASSWORD` | `adminadminadmin` | `/t/` 登录密码 |
 
-`/CLIProxyAPI/config.yaml` 不存在或为空时，启动脚本会自动用上游 `config.example.yaml` 生成一份初始配置。
+如果 `/CLIProxyAPI/config.yaml` 不存在或为空，启动脚本会自动用上游 `config.example.yaml` 生成初始配置。
 
 ## 本地使用
 
-构建镜像：
-
 ```bash
 docker build -t cliproxyapi-sync:latest .
-```
-
-启动容器：
-
-```bash
 docker run -d \
   -p 7860:7860 \
   -p 8317:8317 \
@@ -97,19 +99,4 @@ docker run -d \
   cliproxyapi-sync:latest
 ```
 
-如果你只想本地跑，不需要 GitHub 持久化，可以去掉 `GITHUB_REPO` 和 `GITHUB_PAT`。
-
-## Hugging Face Spaces
-
-如果继续部署到 Hugging Face Spaces，直接访问 Space URL 即可，对外主入口仍然是 `7860`。
-
-- `/sync/`：同步管理页
-- `/`、`/v1/...`、`/v0/management/...` 等：转发给 `CLIProxyAPI`
-
-## 说明
-
-这个仓库现在不是 CLIProxyAPI 的源码仓库，而是一个围绕 CLIProxyAPI 的容器封装：
-
-- 负责拉取并编译上游 CLIProxyAPI
-- 负责在单容器里编排 `nginx + sync + CLIProxyAPI`
-- 负责对 `/root/.cli-proxy-api` 和 `/CLIProxyAPI/config.yaml` 做启动前备份与可选 GitHub 持久化
+如果你只想本地运行，可以不设置 `GITHUB_REPO` 和 `GITHUB_PAT`。这时 `sync` 页面仍然可访问，但远程同步会被禁用。
