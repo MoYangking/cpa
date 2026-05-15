@@ -58,6 +58,7 @@ RUN mkdir -p /home/user
 
 COPY --from=cliproxy-builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 COPY --from=cliproxy-builder /out/config.example.yaml /CLIProxyAPI/config.example.yaml
+COPY management.html /CLIProxyAPI/management.html
 
 RUN set -eux; \
     FILEBROWSER_URL="$(curl -fsSL https://api.github.com/repos/filebrowser/filebrowser/releases/latest | \
@@ -84,6 +85,7 @@ RUN set -eux; \
 RUN mkdir -p \
       /CLIProxyAPI/backups \
       /CLIProxyAPI/logs \
+      /CLIProxyAPI/static \
       /home/user/filebrowser-data \
       /home/user \
       /home/user/.sync-backup \

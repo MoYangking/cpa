@@ -79,8 +79,18 @@ def set_remote(hist_dir: str, url: str) -> None:
 def remote_is_empty(hist_dir: str) -> bool:
     """远端是否为空仓（无 heads 且无任何 refs）。"""
     # No heads and no refs means empty
-    heads = run(["git", "ls-remote", "--heads", "origin"], cwd=hist_dir, check=False).stdout.strip()
-    all_refs = run(["git", "ls-remote", "origin"], cwd=hist_dir, check=False).stdout.strip()
+    heads_proc = run(["git", "ls-remote", "--heads", "origin"], cwd=hist_dir, check=False)
+    all_refs_proc = run(["git", "ls-remote", "origin"], cwd=hist_dir, check=False)
+    if heads_proc.returncode != 0:
+        raise GitError(
+            f"Command failed: git ls-remote --heads origin\nstdout: {heads_proc.stdout}\nstderr: {heads_proc.stderr}"
+        )
+    if all_refs_proc.returncode != 0:
+        raise GitError(
+            f"Command failed: git ls-remote origin\nstdout: {all_refs_proc.stdout}\nstderr: {all_refs_proc.stderr}"
+        )
+    heads = heads_proc.stdout.strip()
+    all_refs = all_refs_proc.stdout.strip()
     return len(heads) == 0 and len(all_refs) == 0
 
 

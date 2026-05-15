@@ -67,6 +67,11 @@ def create_app(daemon=None):
             rhead = git_ops.run(["git", "rev-parse", f"origin/{st.branch}"], cwd=st.hist_dir, check=False).stdout.strip()
         except Exception:
             rhead = ""
+        try:
+            with open(st.sync_progress_file, "r", encoding="utf-8") as f:
+                progress = __import__("json").load(f)
+        except Exception:
+            progress = {}
         return {
             "base": st.base,
             "hist_dir": st.hist_dir,
@@ -79,6 +84,7 @@ def create_app(daemon=None):
             "dirty": dirty,
             "head": head,
             "remote_head": rhead,
+            "progress": progress,
         }
 
     @app.post("/sync/api/init")

@@ -6,6 +6,9 @@ APP_DIR="/CLIProxyAPI"
 APP_BIN="${APP_DIR}/CLIProxyAPI"
 CONFIG_FILE="${APP_DIR}/config.yaml"
 CONFIG_TEMPLATE="${APP_DIR}/config.example.yaml"
+MANAGEMENT_BUNDLED_HTML="${APP_DIR}/management.html"
+MANAGEMENT_STATIC_DIR="${APP_DIR}/static"
+MANAGEMENT_STATIC_HTML="${MANAGEMENT_STATIC_DIR}/management.html"
 AUTH_DIR="/root/.cli-proxy-api"
 LOG_DIR="${APP_DIR}/logs"
 BACKUP_ROOT="${APP_DIR}/backups"
@@ -42,6 +45,12 @@ fi
 if [[ ! -s "${CONFIG_FILE}" && -f "${CONFIG_TEMPLATE}" ]]; then
   cp "${CONFIG_TEMPLATE}" "${CONFIG_FILE}"
   echo "[cli-proxy-api] Seeded ${CONFIG_FILE} from ${CONFIG_TEMPLATE}"
+fi
+
+if [[ -f "${MANAGEMENT_BUNDLED_HTML}" ]]; then
+  mkdir -p "${MANAGEMENT_STATIC_DIR}"
+  cp -f "${MANAGEMENT_BUNDLED_HTML}" "${MANAGEMENT_STATIC_HTML}"
+  echo "[cli-proxy-api] Installed bundled management panel to ${MANAGEMENT_STATIC_HTML}"
 fi
 
 cd "${APP_DIR}"

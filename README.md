@@ -35,6 +35,8 @@
 
 其中 `filebrowser` 的数据库被重新纳入同步，方便保留登录状态和配置。
 
+如果仓库根目录存在 `management.html`，镜像会把它打包进去，并在容器启动时安装到 `/CLIProxyAPI/static/management.html`，优先使用这份本地管理面板，不再依赖首次在线下载。
+
 ## 入口
 
 - `7860`：统一入口

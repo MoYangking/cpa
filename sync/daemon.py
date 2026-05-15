@@ -83,7 +83,21 @@ class SyncDaemon:
     def _remote_url(self) -> str:
         return f"https://x-access-token:{self.st.github_pat}@github.com/{self.st.github_repo}.git"
 
-    def ensure_remote_ready(self) -> None:
+    def _is_fatal_remote_error(self, exc: Exception) -> bool:
+        text = str(exc).lower()
+        fatal_markers = [
+            "authentication failed",
+            "invalid username or token",
+            "password authentication is not supported",
+            "repository not found",
+            "could not read username",
+            "permission denied",
+            "403",
+            "401",
+        ]
+        return any(marker in text for marker in fatal_markers)
+
+    def ensure_remote_ready(self) -> bool:
         """阻塞直到远端可访问，且本地已拉取并对齐到远端分支。
 
         行为：
@@ -118,12 +132,24 @@ class SyncDaemon:
                 # 校验 HEAD 对齐远端
                 if self._head_matches_origin():
                     log("初始拉取完成且 HEAD 已对齐远端")
-                    return
+                    return True
                 else:
                     log("HEAD 未对齐远端，重试对齐...")
             except Exception as e:
+                if self._is_fatal_remote_error(e):
+                    err(f"同步认证/权限错误，已跳过远程同步：{e}")
+                    self.mark_sync_complete(
+                        {
+                            "stage": "error",
+                            "progress": 100,
+                            "fatal": True,
+                            "error": "GitHub sync authentication or repository access failed. Check GITHUB_REPO/GITHUB_PAT.",
+                        }
+                    )
+                    return False
                 err(f"初始化/拉取失败：{e}")
             time.sleep(3)
+        return False
 
     def _head_matches_origin(self) -> bool:
         """HEAD 与 origin/<branch> 是否一致。
@@ -172,7 +198,7 @@ class SyncDaemon:
         except Exception as e:
             err(f"Failed to write progress: {e}")
     
-    def mark_sync_complete(self) -> None:
+    def mark_sync_complete(self, progress: Optional[dict] = None) -> None:
         """标记同步完成，允许其他服务启动"""
         try:
             complete_dir = os.path.dirname(self.st.sync_complete_file)
@@ -181,7 +207,7 @@ class SyncDaemon:
             with open(self.st.sync_complete_file, 'w') as f:
                 f.write(str(int(time.time())))
             log("✓ Sync completed, other services can start")
-            self.write_progress({"stage": "complete", "progress": 100})
+            self.write_progress(progress or {"stage": "complete", "progress": 100})
         except Exception as e:
             err(f"Failed to mark sync complete: {e}")
     
@@ -367,7 +393,11 @@ class SyncDaemon:
         # 1) Prepare remote and align Git state.
         log("Stage 1/4: Git repository sync...")
         self.write_progress({"stage": "git", "progress": 10})
-        self.ensure_remote_ready()
+        if not self.ensure_remote_ready():
+            log("Remote sync is unavailable; startup has been released without remote synchronization.")
+            while not self._stop.is_set():
+                time.sleep(1)
+            return 0
         
         # 确保 HEAD 完全对齐后再继续
         log("Verifying Git HEAD alignment...")

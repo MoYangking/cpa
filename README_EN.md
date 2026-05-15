@@ -29,6 +29,8 @@ Default sync targets now include:
 
 The `filebrowser` database is included again so its state survives sync-enabled deployments.
 
+If `management.html` exists at the repository root, the image bundles it and installs it to `/CLIProxyAPI/static/management.html` during startup, so the local management panel is used instead of relying on the first online download.
+
 ## Entry points
 
 - `7860`: unified entrypoint
