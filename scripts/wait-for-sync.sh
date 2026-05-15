@@ -1,72 +1,80 @@
-#!/bin/bash
-# wait-for-sync.sh
-# 
-# 等待 sync 守护进程完成初始同步
-#
-# 此脚本由其他服务在启动前调用，确保所有数据（Git + LFS）已完全同步
+#!/usr/bin/env bash
+set -euo pipefail
 
 SYNC_COMPLETE="/home/user/.sync-backup/.sync-complete"
 SYNC_PROGRESS="/home/user/.sync-backup/.sync-progress.json"
-MAX_WAIT=${SYNC_WAIT_TIMEOUT:-1800}  # 默认 30 分钟超时
+MAX_WAIT="${SYNC_WAIT_TIMEOUT:-1800}"
 ELAPSED=0
 CHECK_INTERVAL=5
 
-if [ -z "${GITHUB_REPO:-}" ] || [ -z "${GITHUB_PAT:-}" ]; then
-    echo "[wait-for-sync] GitHub sync disabled, continuing without waiting."
-    exit 0
+read_progress() {
+  STAGE=""
+  PROGRESS=""
+  CURRENT=""
+  TOTAL=""
+
+  if [[ ! -f "${SYNC_PROGRESS}" ]]; then
+    return 1
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    STAGE="$(jq -r '.stage // empty' "${SYNC_PROGRESS}" 2>/dev/null || true)"
+    PROGRESS="$(jq -r '.progress // empty' "${SYNC_PROGRESS}" 2>/dev/null || true)"
+    CURRENT="$(jq -r '.current // empty' "${SYNC_PROGRESS}" 2>/dev/null || true)"
+    TOTAL="$(jq -r '.total // empty' "${SYNC_PROGRESS}" 2>/dev/null || true)"
+    return 0
+  fi
+
+  STAGE="$(grep -oE '"stage"[[:space:]]*:[[:space:]]*"[^"]*"' "${SYNC_PROGRESS}" 2>/dev/null | head -n1 | sed -E 's/.*"([^"]*)".*/\1/' || true)"
+  PROGRESS="$(grep -oE '"progress"[[:space:]]*:[[:space:]]*[0-9]+' "${SYNC_PROGRESS}" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"
+  CURRENT="$(grep -oE '"current"[[:space:]]*:[[:space:]]*[0-9]+' "${SYNC_PROGRESS}" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"
+  TOTAL="$(grep -oE '"total"[[:space:]]*:[[:space:]]*[0-9]+' "${SYNC_PROGRESS}" 2>/dev/null | head -n1 | grep -oE '[0-9]+' || true)"
+  return 0
+}
+
+if [[ -z "${GITHUB_REPO:-}" || -z "${GITHUB_PAT:-}" ]]; then
+  echo "[wait-for-sync] GitHub sync disabled, continuing without waiting."
+  exit 0
 fi
 
-if [ "${MAX_WAIT}" = "0" ]; then
-    echo "[wait-for-sync] SYNC_WAIT_TIMEOUT=0, continuing without waiting."
-    exit 0
+if [[ "${MAX_WAIT}" == "0" ]]; then
+  echo "[wait-for-sync] SYNC_WAIT_TIMEOUT=0, continuing without waiting."
+  exit 0
 fi
 
 echo "[wait-for-sync] Waiting for sync to complete..."
 echo "[wait-for-sync] Timeout: ${MAX_WAIT} seconds"
 
-while [ $ELAPSED -lt $MAX_WAIT ]; do
-    # 检查同步完成标记文件
-    if [ -f "$SYNC_COMPLETE" ]; then
-        # 验证文件是否是最近创建的（避免使用旧标记）
-        FILE_AGE=$(($(date +%s) - $(stat -c %Y "$SYNC_COMPLETE" 2>/dev/null || echo 0)))
-        
-        if [ $FILE_AGE -lt 600 ]; then  # 10 分钟内创建
-            echo "[wait-for-sync] ✓ Sync completed! Starting service..."
-            exit 0
-        else
-            echo "[wait-for-sync] ⚠ Sync complete marker is too old (${FILE_AGE}s), waiting for fresh sync..."
-        fi
+while [[ "${ELAPSED}" -lt "${MAX_WAIT}" ]]; do
+  if [[ -f "${SYNC_COMPLETE}" ]]; then
+    file_age="$(($(date +%s) - $(stat -c %Y "${SYNC_COMPLETE}" 2>/dev/null || echo 0)))"
+    if [[ "${file_age}" -lt 600 ]]; then
+      echo "[wait-for-sync] Sync completed. Starting service..."
+      exit 0
     fi
-    
-    # 显示当前进度（如果有）
-    if [ -f "$SYNC_PROGRESS" ]; then
-        # 尝试解析 JSON 进度
-        STAGE=$(cat "$SYNC_PROGRESS" 2>/dev/null | grep -o '"stage":"[^"]*"' | cut -d'"' -f4)
-        PROGRESS=$(cat "$SYNC_PROGRESS" 2>/dev/null | grep -o '"progress":[0-9]*' | cut -d: -f2)
-        CURRENT=$(cat "$SYNC_PROGRESS" 2>/dev/null | grep -o '"current":[0-9]*' | cut -d: -f2)
-        TOTAL=$(cat "$SYNC_PROGRESS" 2>/dev/null | grep -o '"total":[0-9]*' | cut -d: -f2)
-        
-        if [ -n "$PROGRESS" ]; then
-            if [ -n "$CURRENT" ] && [ -n "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
-                echo "[wait-for-sync] Progress: ${PROGRESS}% (Stage: ${STAGE}, ${CURRENT}/${TOTAL} files)"
-            else
-                echo "[wait-for-sync] Progress: ${PROGRESS}% (Stage: ${STAGE})"
-            fi
-        else
-            echo "[wait-for-sync] Waiting... (${ELAPSED}s elapsed)"
-        fi
+    echo "[wait-for-sync] Sync marker is stale (${file_age}s), waiting for a fresh sync..."
+  fi
+
+  if [[ -f "${SYNC_PROGRESS}" ]]; then
+    read_progress || true
+    if [[ -n "${PROGRESS}" ]]; then
+      if [[ -n "${CURRENT}" && -n "${TOTAL}" && "${TOTAL}" =~ ^[0-9]+$ && "${TOTAL}" -gt 0 ]]; then
+        echo "[wait-for-sync] Progress: ${PROGRESS}% (Stage: ${STAGE}, ${CURRENT}/${TOTAL} files)"
+      else
+        echo "[wait-for-sync] Progress: ${PROGRESS}% (Stage: ${STAGE})"
+      fi
     else
-        echo "[wait-for-sync] Waiting for sync to start... (${ELAPSED}s elapsed)"
+      echo "[wait-for-sync] Waiting... (${ELAPSED}s elapsed)"
     fi
-    
-    sleep $CHECK_INTERVAL
-    ELAPSED=$((ELAPSED + CHECK_INTERVAL))
+  else
+    echo "[wait-for-sync] Waiting for sync to start... (${ELAPSED}s elapsed)"
+  fi
+
+  sleep "${CHECK_INTERVAL}"
+  ELAPSED=$((ELAPSED + CHECK_INTERVAL))
 done
 
-# 超时处理
-echo "[wait-for-sync] ⚠ Timeout after ${MAX_WAIT} seconds"
+echo "[wait-for-sync] Timeout after ${MAX_WAIT} seconds"
 echo "[wait-for-sync] Starting service anyway to avoid permanent block..."
 echo "[wait-for-sync] Note: Some data may not be fully synced!"
-
-# 即使超时也返回 0，允许服务启动（避免永久阻塞）
 exit 0

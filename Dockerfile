@@ -23,12 +23,13 @@ ARG APT_MIRROR=http://azure.archive.ubuntu.com/ubuntu
 ARG PIP_INDEX_URL=https://pypi.org/simple/
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=Asia/Shanghai \
-    VIRTUAL_ENV=/root/.venv \
-    PATH=/root/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    TZ=Asia/Shanghai
 
 RUN set -eux; \
     mirror="${APT_MIRROR%/}"; \
+    if [ -f /etc/apt/sources.list ]; then \
+      sed -i "s|http://archive.ubuntu.com/ubuntu|${mirror}|g; s|http://security.ubuntu.com/ubuntu|${mirror}|g" /etc/apt/sources.list; \
+    fi; \
     if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
       sed -i "s|http://archive.ubuntu.com/ubuntu|${mirror}|g; s|http://security.ubuntu.com/ubuntu|${mirror}|g" /etc/apt/sources.list.d/ubuntu.sources; \
     fi
@@ -38,7 +39,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    gnupg \
     jq \
+    lsb-release \
     nginx-full \
     python3 \
     python3-pip \
@@ -48,17 +51,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /CLIProxyAPI
+RUN set -eux; \
+    curl -fsSL https://openresty.org/package/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/openresty.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu $(lsb_release -sc) main" \
+      | tee /etc/apt/sources.list.d/openresty.list > /dev/null; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends openresty; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /home/user && chown -R 1000:1000 /home/user
+ENV HOME=/home/user \
+    VIRTUAL_ENV=/home/user/.venv \
+    PATH=/home/user/.venv/bin:/home/user/.local/bin:$PATH
+WORKDIR /home/user
 
 RUN python3 -m venv "$VIRTUAL_ENV" && \
-    "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip && \
-    "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --index-url "${PIP_INDEX_URL}" fastapi uvicorn httpx
+    "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip uv
 
-RUN mkdir -p /home/user
-
-COPY --from=cliproxy-builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
-COPY --from=cliproxy-builder /out/config.example.yaml /CLIProxyAPI/config.example.yaml
-COPY management.html /CLIProxyAPI/management.html
+RUN uv pip install --no-cache-dir --index-url ${PIP_INDEX_URL} fastapi uvicorn httpx
+RUN chown -R 1000:1000 "$VIRTUAL_ENV"
 
 RUN set -eux; \
     FILEBROWSER_URL="$(curl -fsSL https://api.github.com/repos/filebrowser/filebrowser/releases/latest | \
@@ -69,7 +80,10 @@ RUN set -eux; \
     tar -xzf /tmp/filebrowser.tar.gz -C /tmp; \
     mv /tmp/filebrowser /home/user/filebrowser; \
     chmod +x /home/user/filebrowser; \
-    rm -f /tmp/filebrowser.tar.gz
+    chown 1000:1000 /home/user/filebrowser; \
+    rm -f /tmp/filebrowser.tar.gz; \
+    mkdir -p /home/user/filebrowser-data; \
+    chown -R 1000:1000 /home/user/filebrowser-data
 
 RUN set -eux; \
     GOTTY_URL="$(curl -fsSL https://api.github.com/repos/sorenisanerd/gotty/releases/latest | \
@@ -80,29 +94,58 @@ RUN set -eux; \
     tar -xzf /tmp/gotty.tar.gz -C /tmp; \
     mv /tmp/gotty /home/user/gotty; \
     chmod +x /home/user/gotty; \
+    chown 1000:1000 /home/user/gotty; \
     rm -f /tmp/gotty.tar.gz
+
+COPY --from=cliproxy-builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
+COPY --from=cliproxy-builder /out/config.example.yaml /CLIProxyAPI/config.example.yaml
 
 RUN mkdir -p \
       /CLIProxyAPI/backups \
       /CLIProxyAPI/logs \
       /CLIProxyAPI/static \
-      /home/user/filebrowser-data \
-      /home/user \
-      /home/user/.sync-backup \
-      /home/user/scripts \
       /root/.cli-proxy-api \
+      /home/user/.sync-backup \
  && chmod +x /CLIProxyAPI/CLIProxyAPI
 
-COPY supervisor/supervisord.conf /home/user/supervisord.conf
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
-COPY sync /home/user/sync
-COPY scripts/run-syncd.sh /home/user/scripts/run-syncd.sh
-COPY scripts/run-cliproxyapi.sh /home/user/scripts/run-cliproxyapi.sh
-COPY scripts/wait-for-sync.sh /home/user/scripts/wait-for-sync.sh
+RUN mkdir -p /home/user/logs && chown -R 1000:1000 /home/user/logs
+COPY --chown=1000:1000 supervisor/supervisord.conf /home/user/supervisord.conf
+RUN mkdir -p /home/user/nginx && chown -R 1000:1000 /home/user/nginx
+COPY --chown=1000:1000 nginx/nginx.conf /home/user/nginx/nginx.conf
+COPY --chown=1000:1000 nginx/default_admin_config.json /home/user/nginx/default_admin_config.json
+COPY --chown=1000:1000 nginx/route-admin /home/user/nginx/route-admin
+RUN mkdir -p \
+      /home/user/nginx/tmp/body \
+      /home/user/nginx/tmp/proxy \
+      /home/user/nginx/tmp/fastcgi \
+      /home/user/nginx/tmp/uwsgi \
+      /home/user/nginx/tmp/scgi \
+    && chown -R 1000:1000 /home/user/nginx
 
+COPY --chown=1000:1000 sync /home/user/sync
+RUN chown -R 1000:1000 /home/user/sync
+
+RUN mkdir -p /home/user/scripts && chown -R 1000:1000 /home/user/scripts
+COPY --chown=1000:1000 scripts/run-cliproxyapi.sh /home/user/scripts/run-cliproxyapi.sh
+COPY --chown=1000:1000 scripts/run-syncd.sh /home/user/scripts/run-syncd.sh
+COPY --chown=1000:1000 scripts/wait-for-sync.sh /home/user/scripts/wait-for-sync.sh
 RUN sed -i 's/\r$//' /home/user/scripts/*.sh && \
     chmod +x /home/user/scripts/*.sh
 
-EXPOSE 7860 8317 8085 8888 8080 1455 54545 51121 11451 5321
+ENV GITHUB_REPO="" \
+    GITHUB_PAT="" \
+    GIT_BRANCH="main" \
+    HIST_DIR="/home/user/.sync-backup" \
+    SYNC_INTERVAL=180 \
+    SYNC_WAIT_TIMEOUT=1800 \
+    SYNC_PORT=5321 \
+    SYNC_TARGETS="root/.cli-proxy-api/ CLIProxyAPI/config.yaml home/user/nginx/admin_config.json home/user/filebrowser-data/filebrowser.db" \
+    CLI_PROXY_API_CONFIG_FILE="/CLIProxyAPI/config.yaml" \
+    CLI_PROXY_API_INTERNAL_BASE="http://127.0.0.1:8317" \
+    DEPLOY=""
+
+ENV PATH=/usr/local/openresty/bin:$PATH
+
+EXPOSE 7860 8317 8085 1455 54545 51121 11451 5321
 
 CMD ["supervisord", "-c", "/home/user/supervisord.conf"]
