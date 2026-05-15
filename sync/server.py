@@ -222,6 +222,108 @@ def _run_management_probe(
     }
 
 
+def _filter_incoming_headers_for_replay(headers: dict, override_key: str = "") -> Dict[str, str]:
+    replay = {}
+    lower_headers = {str(k).lower(): str(v) for k, v in headers.items()}
+
+    allow_list = [
+        "authorization",
+        "cookie",
+        "origin",
+        "referer",
+        "host",
+        "x-forwarded-for",
+        "x-real-ip",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+        "x-forwarded-port",
+        "user-agent",
+        "accept",
+        "accept-language",
+        "cache-control",
+        "pragma",
+    ]
+
+    for name in allow_list:
+        if name in lower_headers:
+            replay[name] = lower_headers[name]
+
+    if override_key.strip():
+        replay["authorization"] = f"Bearer {override_key.strip()}"
+
+    return replay
+
+
+def _run_management_replay(
+    incoming_headers: dict,
+    path: str = "/v0/management/config",
+    timeout: int = 15,
+    override_key: str = "",
+    override_headers: dict | None = None,
+) -> Dict[str, object]:
+    path = _normalize_probe_path(path)
+    url = f"{CLI_PROXY_API_INTERNAL_BASE}{path}"
+    replay_headers = _filter_incoming_headers_for_replay(incoming_headers, override_key=override_key)
+    override_headers = override_headers or {}
+    for name, value in override_headers.items():
+        name = str(name).strip().lower()
+        value = str(value).strip()
+        if name and value:
+            replay_headers[name] = value
+
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers=replay_headers,
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body_text, body_json = _read_response_body(resp)
+            status = resp.status
+            response_headers = dict(resp.headers.items())
+    except urllib.error.HTTPError as e:
+        body_text, body_json = _read_response_body(e)
+        status = e.code
+        response_headers = dict(e.headers.items())
+
+    interesting_response_headers = [
+        "Content-Type",
+        "Access-Control-Allow-Origin",
+        "X-Cpa-Version",
+        "X-Cpa-Build-Date",
+        "X-Cpa-Commit",
+        "Set-Cookie",
+    ]
+
+    safe_request_headers = {}
+    for name, value in replay_headers.items():
+        if name == "authorization":
+            safe_request_headers[name] = f"Bearer {_mask_value(value.removeprefix('Bearer ').strip())}" if value.lower().startswith("bearer ") else _mask_value(value)
+        elif name == "cookie":
+            safe_request_headers[name] = value[:4000]
+        else:
+            safe_request_headers[name] = value
+
+    return {
+        "request": {
+            "url": url,
+            "path": path,
+            "headers": safe_request_headers,
+        },
+        "response": {
+            "status": status,
+            "headers": {
+                name: response_headers.get(name, "")
+                for name in interesting_response_headers
+                if response_headers.get(name)
+            },
+            "body_text": body_text[:6000],
+            "body_json": body_json,
+        },
+    }
+
+
 def _remote_url(pat: str, repo: str) -> str:
     """构造 x-access-token 形式的 GitHub 远端 URL。"""
     return f"https://x-access-token:{pat}@github.com/{repo}.git"
@@ -234,7 +336,7 @@ def create_app(daemon=None):
     - daemon: 可选的 SyncDaemon 实例；若提供，`/sync/api/sync-now` 将直接调用其同步方法。
     """
     # Lazy import to avoid hard dependency when not serving
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import JSONResponse
 
@@ -321,6 +423,27 @@ def create_app(daemon=None):
                 remote_ip=remote_ip,
                 forwarded_host=forwarded_host,
                 forwarded_proto=forwarded_proto,
+            )
+            return {"ok": True, **result}
+        except ValueError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    @app.post("/sync/api/debug/management-replay")
+    async def api_debug_management_replay(request: Request, payload: dict):
+        """Replay the browser request headers to local CLIProxyAPI management API."""
+        try:
+            path = str(payload.get("path", "/v0/management/config"))
+            timeout = int(payload.get("timeout", 15))
+            override_key = str(payload.get("override_key", ""))
+            override_headers = payload.get("override_headers", {}) if isinstance(payload.get("override_headers", {}), dict) else {}
+            result = _run_management_replay(
+                incoming_headers=dict(request.headers.items()),
+                path=path,
+                timeout=timeout,
+                override_key=override_key,
+                override_headers=override_headers,
             )
             return {"ok": True, **result}
         except ValueError as e:

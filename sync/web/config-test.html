@@ -259,6 +259,14 @@
             flex-wrap: wrap;
         }
 
+        .browser-grid-wide {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(180px, 1fr));
+            gap: 12px;
+            align-items: end;
+            margin-top: 12px;
+        }
+
         pre {
             margin: 0;
             padding: 22px;
@@ -304,6 +312,10 @@
             }
 
             .browser-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .browser-grid-wide {
                 grid-template-columns: 1fr;
             }
         }
@@ -412,6 +424,21 @@
                         <div class="browser-actions">
                             <button id="browserIncludeBtn" class="secondary" type="button">Fetch With Cookies</button>
                             <button id="browserOmitBtn" class="secondary" type="button">Fetch Without Cookies</button>
+                            <button id="browserReplayBtn" class="secondary" type="button">Replay Through /sync</button>
+                        </div>
+                    </div>
+                    <div class="browser-grid-wide">
+                        <div class="field">
+                            <label for="browserReplayHostInput">Replay host</label>
+                            <input id="browserReplayHostInput" type="text" placeholder="moyang303-cpa.ms.show" />
+                        </div>
+                        <div class="field">
+                            <label for="browserReplayOriginInput">Replay origin</label>
+                            <input id="browserReplayOriginInput" type="text" placeholder="https://moyang303-cpa.ms.show" />
+                        </div>
+                        <div class="field">
+                            <label for="browserReplayRefererInput">Replay referer</label>
+                            <input id="browserReplayRefererInput" type="text" placeholder="https://moyang303-cpa.ms.show/management.html" />
                         </div>
                     </div>
                     <div class="probe-result">
@@ -452,6 +479,10 @@
         const browserPathInput = document.getElementById("browserPathInput");
         const browserIncludeBtn = document.getElementById("browserIncludeBtn");
         const browserOmitBtn = document.getElementById("browserOmitBtn");
+        const browserReplayBtn = document.getElementById("browserReplayBtn");
+        const browserReplayHostInput = document.getElementById("browserReplayHostInput");
+        const browserReplayOriginInput = document.getElementById("browserReplayOriginInput");
+        const browserReplayRefererInput = document.getElementById("browserReplayRefererInput");
         const browserOutput = document.getElementById("browserOutput");
 
         function setStatus(message, ok) {
@@ -637,6 +668,54 @@
             }
         }
 
+        async function runBrowserReplay() {
+            const key = browserKeyInput.value.trim();
+            const path = browserPathInput.value.trim() || "/v0/management/config";
+            const replayHost = browserReplayHostInput.value.trim();
+            const replayOrigin = browserReplayOriginInput.value.trim();
+            const replayReferer = browserReplayRefererInput.value.trim();
+
+            if (!key) {
+                setStatus("Enter the plaintext management key before running the replay.", false);
+                browserOutput.textContent = "Missing key.";
+                return;
+            }
+
+            browserOutput.textContent = "Running replay through /sync...";
+            try {
+                const response = await fetch("/sync/api/debug/management-replay", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        path,
+                        override_key: key,
+                        override_headers: {
+                            host: replayHost,
+                            origin: replayOrigin,
+                            referer: replayReferer
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                browserOutput.textContent = JSON.stringify(data, null, 2);
+
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.error || `Replay failed with ${response.status}`);
+                }
+
+                const status = data.response && typeof data.response.status !== "undefined"
+                    ? data.response.status
+                    : "unknown";
+                setStatus(`Replay through /sync completed with status ${status}.`, true);
+            } catch (error) {
+                setStatus(`Replay error: ${error.message}`, false);
+            }
+        }
+
         refreshBtn.addEventListener("click", loadConfig);
         rawToggle.addEventListener("change", loadConfig);
         copyBtn.addEventListener("click", copyContent);
@@ -644,6 +723,7 @@
         probeRemoteBtn.addEventListener("click", () => runProbe(true));
         browserIncludeBtn.addEventListener("click", () => runBrowserFetch(true));
         browserOmitBtn.addEventListener("click", () => runBrowserFetch(false));
+        browserReplayBtn.addEventListener("click", runBrowserReplay);
 
         loadConfig();
     </script>
