@@ -12,8 +12,6 @@ MANAGEMENT_STATIC_HTML="${MANAGEMENT_STATIC_DIR}/management.html"
 AUTH_DIR="/root/.cli-proxy-api"
 LOG_DIR="${APP_DIR}/logs"
 BACKUP_ROOT="${APP_DIR}/backups"
-ADMIN_CONFIG_FILE="${ADMIN_CONFIG_FILE:-/home/user/nginx/admin_config.json}"
-TARGET_BACKEND="${CLI_PROXY_API_INTERNAL_BASE:-http://127.0.0.1:8317}"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${BACKUP_ROOT}/${TIMESTAMP}"
 
@@ -53,23 +51,6 @@ if [[ -f "${MANAGEMENT_BUNDLED_HTML}" ]]; then
   mkdir -p "${MANAGEMENT_STATIC_DIR}"
   cp -f "${MANAGEMENT_BUNDLED_HTML}" "${MANAGEMENT_STATIC_HTML}"
   echo "[cli-proxy-api] Installed bundled management panel to ${MANAGEMENT_STATIC_HTML}"
-fi
-
-if [[ -f "${ADMIN_CONFIG_FILE}" ]] && command -v jq >/dev/null 2>&1; then
-  tmp_file="$(mktemp)"
-  if jq --arg backend "${TARGET_BACKEND}" '
-      .default_backend =
-        (if (.default_backend // "") == "" or .default_backend == "http://127.0.0.1:8001"
-         then $backend
-         else .default_backend
-         end)
-    ' "${ADMIN_CONFIG_FILE}" > "${tmp_file}"; then
-    mv "${tmp_file}" "${ADMIN_CONFIG_FILE}"
-    echo "[cli-proxy-api] Ensured default backend in ${ADMIN_CONFIG_FILE} is ${TARGET_BACKEND}"
-  else
-    rm -f "${tmp_file}"
-    echo "[cli-proxy-api] WARN: failed to update ${ADMIN_CONFIG_FILE}" >&2
-  fi
 fi
 
 cd "${APP_DIR}"

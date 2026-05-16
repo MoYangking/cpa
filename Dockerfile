@@ -39,10 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
-    gnupg \
     jq \
-    lsb-release \
-    nginx-full \
     python3 \
     python3-pip \
     python3-venv \
@@ -50,14 +47,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor \
     tzdata \
  && rm -rf /var/lib/apt/lists/*
-
-RUN set -eux; \
-    curl -fsSL https://openresty.org/package/pubkey.gpg | gpg --dearmor -o /usr/share/keyrings/openresty.gpg; \
-    echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/ubuntu $(lsb_release -sc) main" \
-      | tee /etc/apt/sources.list.d/openresty.list > /dev/null; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends openresty; \
-    rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /home/user && chown -R 1000:1000 /home/user
 ENV HOME=/home/user \
@@ -110,17 +99,6 @@ RUN mkdir -p \
 
 RUN mkdir -p /home/user/logs && chown -R 1000:1000 /home/user/logs
 COPY --chown=1000:1000 supervisor/supervisord.conf /home/user/supervisord.conf
-RUN mkdir -p /home/user/nginx && chown -R 1000:1000 /home/user/nginx
-COPY --chown=1000:1000 nginx/nginx.conf /home/user/nginx/nginx.conf
-COPY --chown=1000:1000 nginx/default_admin_config.json /home/user/nginx/default_admin_config.json
-COPY --chown=1000:1000 nginx/route-admin /home/user/nginx/route-admin
-RUN mkdir -p \
-      /home/user/nginx/tmp/body \
-      /home/user/nginx/tmp/proxy \
-      /home/user/nginx/tmp/fastcgi \
-      /home/user/nginx/tmp/uwsgi \
-      /home/user/nginx/tmp/scgi \
-    && chown -R 1000:1000 /home/user/nginx
 
 COPY --chown=1000:1000 sync /home/user/sync
 RUN chown -R 1000:1000 /home/user/sync
@@ -139,13 +117,11 @@ ENV GITHUB_REPO="" \
     SYNC_INTERVAL=180 \
     SYNC_WAIT_TIMEOUT=1800 \
     SYNC_PORT=5321 \
-    SYNC_TARGETS="root/.cli-proxy-api/ CLIProxyAPI/config.yaml home/user/nginx/admin_config.json home/user/filebrowser-data/filebrowser.db" \
+    SYNC_TARGETS="root/.cli-proxy-api/ CLIProxyAPI/config.yaml home/user/filebrowser-data/filebrowser.db" \
     CLI_PROXY_API_CONFIG_FILE="/CLIProxyAPI/config.yaml" \
     CLI_PROXY_API_INTERNAL_BASE="http://127.0.0.1:8317" \
     DEPLOY=""
 
-ENV PATH=/usr/local/openresty/bin:$PATH
-
-EXPOSE 7860 8317 8085 1455 54545 51121 11451 5321
+EXPOSE 8317 8085 1455 54545 51121 11451 5321 8888 18080
 
 CMD ["supervisord", "-c", "/home/user/supervisord.conf"]

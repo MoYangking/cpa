@@ -186,7 +186,7 @@ class SyncDaemon:
     
     # -------- 进度管理 --------
     def write_progress(self, progress: dict) -> None:
-        """写入同步进度到文件（供 Nginx 状态页读取）"""
+        """写入同步进度到文件（供状态页读取）"""
         try:
             # 确保目录存在
             progress_dir = os.path.dirname(self.st.sync_progress_file)

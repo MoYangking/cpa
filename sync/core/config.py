@@ -26,7 +26,6 @@ DEFAULT_TARGETS = (
             [
                 "root/.cli-proxy-api/",
                 "CLIProxyAPI/config.yaml",
-                "home/user/nginx/admin_config.json",
                 "home/user/filebrowser-data/filebrowser.db",
             ]
         ),
