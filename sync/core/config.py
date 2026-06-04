@@ -24,7 +24,7 @@ DEFAULT_TARGETS = (
         "SYNC_TARGETS",
         " ".join(
             [
-                "root/.cli-proxy-api/",
+                "/home/user/.cli-proxy-api/",
                 "CLIProxyAPI/config.yaml",
                 "home/user/filebrowser-data/filebrowser.db",
             ]
