@@ -56,7 +56,7 @@
 | `GITHUB_PAT` | 空 | GitHub Token |
 | `GIT_BRANCH` | `main` | 同步分支 |
 | `HIST_DIR` | `/home/user/.sync-backup` | 同步仓库在容器内的路径 |
-| `SYNC_INTERVAL` | `180` | 周期同步间隔（秒） |
+| `SYNC_INTERVAL` | `300` | 周期同步间隔（秒），默认 5 分钟 |
 | `SYNC_WAIT_TIMEOUT` | `1800` | 业务服务等待首次同步的最长时间；`0` 表示不等待 |
 | `SYNC_TARGETS` | 见上文 | 空格分隔的同步目标列表 |
 

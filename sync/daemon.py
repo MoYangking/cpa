@@ -6,14 +6,14 @@
 1) 远端准备：保证本地历史仓库存在并配置好 origin；若远端为空则创建初始提交并推送；否则 fetch 落地。
 2) HEAD 对齐：循环直到本地 `HEAD` 与 `origin/<branch>` 完全一致（用 `git rev-parse` 校验）。
 3) 链接阶段：将 BASE 下的目标路径迁移到历史仓库，再在原路径创建符号链接；为空目录写入 `.gitkeep` 并提交一次。
-4) 周期同步：固定周期（默认 180 秒）执行 pull --rebase → commit（如有）→ push。
+4) 周期同步：固定周期（默认 300 秒）执行 pull --rebase → commit（如有）→ push。
 
 关键特性：
 - 不使用“就绪文件”这种间接信号；而是用 Git 的真实 HEAD 对比保证拉取完成再继续。
 - 链接在拉取完成之后执行，避免“半拉取状态”破坏本地数据。
 
 可调环境变量：
-- SYNC_INTERVAL：周期同步间隔（秒），默认 180。
+- SYNC_INTERVAL：周期同步间隔（秒），默认 300。
 """
 
 from __future__ import annotations
@@ -29,7 +29,15 @@ from sync.core import git_ops
 from sync.core.blacklist import ensure_git_info_exclude
 from sync.core.config import Settings, load_settings
 from sync.core.linker import migrate_and_link, precreate_dirlike, track_empty_dirs
-from sync.utils.logging import err, log
+from sync.utils.logging import err, log, mask_token
+
+
+def _brief_command_output(proc) -> str:
+    """Return a compact, token-masked command result for logs."""
+    text = (proc.stderr or proc.stdout or "").strip()
+    if not text:
+        return f"exit code {proc.returncode}"
+    return mask_token(text).replace("\n", " | ")[:1200]
 
 # LFS imports (延迟导入，避免循环依赖)
 try:
@@ -61,7 +69,7 @@ class SyncDaemon:
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.st = settings or load_settings()
-        self.interval = int(os.environ.get("SYNC_INTERVAL", "180"))
+        self.interval = int(os.environ.get("SYNC_INTERVAL", "300"))
         self._stop = threading.Event()
         self._lock = threading.Lock()  # 保护 git 操作的互斥
         self._last_commit_ts: float = 0.0
@@ -316,9 +324,15 @@ class SyncDaemon:
         - 检测有变更才提交；
         - push 失败并不会中断守护，仅记录日志等待下次重试。
         """
+        started_at = time.time()
+        log("开始周期同步：pull -> LFS -> track-empty -> commit -> push")
         with self._lock:
             # 1. 尝试变基拉取以避免分叉
-            git_ops.run(["git", "pull", "--rebase", "origin", self.st.branch], cwd=self.st.hist_dir, check=False)
+            pull_proc = git_ops.run(["git", "pull", "--rebase", "origin", self.st.branch], cwd=self.st.hist_dir, check=False)
+            if pull_proc.returncode == 0:
+                log("GitHub 拉取完成")
+            else:
+                err(f"GitHub 拉取失败，本轮继续尝试提交/推送：{_brief_command_output(pull_proc)}")
             
             # 修正文件权限：确保所有文件都可被非 root 进程访问
             try:
@@ -359,26 +373,37 @@ class SyncDaemon:
             self.process_large_files()
             
             # 3. 持续跟踪空目录，确保新建的空文件夹也能被同步
-            track_empty_dirs(self.st.hist_dir, self.st.targets, self.st.excludes)
+            empty_count = track_empty_dirs(self.st.hist_dir, self.st.targets, self.st.excludes)
+            if empty_count:
+                log(f"已写入 {empty_count} 个空目录占位文件")
             
             # 4. 提交变更（包括新的指针文件和 manifest）
             changed = git_ops.add_all_and_commit_if_needed(
                 self.st.hist_dir, "chore(sync): periodic commit"
             )
+            if changed:
+                log("检测到文件变更，已创建周期同步提交")
+            else:
+                log("未检测到需要提交的文件变更")
             
             # 5. 若有变更或远端领先，尝试推送
-            try:
-                git_ops.run(["git", "push", "origin", self.st.branch], cwd=self.st.hist_dir, check=False)
+            push_proc = git_ops.run(["git", "push", "origin", self.st.branch], cwd=self.st.hist_dir, check=False)
+            if push_proc.returncode == 0:
                 if changed:
-                    log("已提交并推送变更")
-            except Exception as e:
-                err(f"推送失败：{e}")
+                    log("已推送本轮提交到 GitHub")
+                else:
+                    log("GitHub 推送检查完成，无新增提交")
+            else:
+                err(f"GitHub 推送失败：{_brief_command_output(push_proc)}")
         self._last_commit_ts = time.time()
+        log(f"周期同步结束，耗时 {self._last_commit_ts - started_at:.1f} 秒")
 
     # -------- 主循环 --------
     def run(self) -> int:
         """主运行函数：按步骤拉起守护逻辑并进入循环。"""
         log("启动 sync 守护进程…")
+        log(f"同步间隔: {self.interval} 秒")
+        log(f"同步目标: {', '.join(self.st.targets)}")
         
         # 写入初始进度
         self.write_progress({"stage": "starting", "progress": 0})
@@ -428,9 +453,10 @@ class SyncDaemon:
         self.mark_sync_complete()
         
         # 5) 进入周期同步循环
-        log("Entering periodic sync loop...")
+        log(f"Entering periodic sync loop, interval={self.interval}s")
         while not self._stop.is_set():
             self.pull_commit_push()
+            log(f"下一轮同步将在 {self.interval} 秒后开始")
             for _ in range(self.interval):
                 if self._stop.is_set():
                     break

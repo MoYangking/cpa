@@ -6,4 +6,6 @@ if [[ -z "${GITHUB_REPO:-}" || -z "${GITHUB_PAT:-}" ]]; then
   echo "[syncd] Remote sync is disabled. Sync web UI will stay available."
 fi
 
+echo "[syncd] Starting sync daemon. SYNC_INTERVAL=${SYNC_INTERVAL:-300}s"
+
 exec /home/user/.venv/bin/python -m sync
