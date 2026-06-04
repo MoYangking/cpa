@@ -93,7 +93,7 @@ RUN mkdir -p \
       /CLIProxyAPI/backups \
       /CLIProxyAPI/logs \
       /CLIProxyAPI/static \
-      /root/.cli-proxy-api \
+      /home/user/.cli-proxy-api \
       /home/user/.sync-backup \
  && chmod +x /CLIProxyAPI/CLIProxyAPI
 
@@ -117,7 +117,7 @@ ENV GITHUB_REPO="" \
     SYNC_INTERVAL=180 \
     SYNC_WAIT_TIMEOUT=1800 \
     SYNC_PORT=5321 \
-    SYNC_TARGETS="root/.cli-proxy-api/ CLIProxyAPI/config.yaml home/user/filebrowser-data/filebrowser.db" \
+    SYNC_TARGETS="home/user/.cli-proxy-api/ CLIProxyAPI/config.yaml home/user/filebrowser-data/filebrowser.db" \
     CLI_PROXY_API_CONFIG_FILE="/CLIProxyAPI/config.yaml" \
     CLI_PROXY_API_INTERNAL_BASE="http://127.0.0.1:8317" \
     DEPLOY=""

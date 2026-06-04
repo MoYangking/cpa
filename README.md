@@ -17,7 +17,7 @@
 
 启动 `CLIProxyAPI` 前会自动备份：
 
-- `/root/.cli-proxy-api/`
+- `/home/user/.cli-proxy-api/`
 - `/CLIProxyAPI/config.yaml`
 
 备份位置：
@@ -26,7 +26,7 @@
 
 默认同步目标：
 
-- `/root/.cli-proxy-api/`
+- `/home/user/.cli-proxy-api/`
 - `/CLIProxyAPI/config.yaml`
 - `/home/user/filebrowser-data/filebrowser.db`
 

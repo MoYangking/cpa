@@ -9,7 +9,7 @@ CONFIG_TEMPLATE="${APP_DIR}/config.example.yaml"
 MANAGEMENT_BUNDLED_HTML="${APP_DIR}/management.html"
 MANAGEMENT_STATIC_DIR="${APP_DIR}/static"
 MANAGEMENT_STATIC_HTML="${MANAGEMENT_STATIC_DIR}/management.html"
-AUTH_DIR="/root/.cli-proxy-api"
+AUTH_DIR="/home/user/.cli-proxy-api"
 LOG_DIR="${APP_DIR}/logs"
 BACKUP_ROOT="${APP_DIR}/backups"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -29,12 +29,12 @@ fi
 mkdir -p "${AUTH_DIR}" "${LOG_DIR}" "${BACKUP_ROOT}"
 
 if [[ ${had_auth} -eq 1 || ${had_config} -eq 1 ]]; then
-  mkdir -p "${BACKUP_DIR}/root" "${BACKUP_DIR}/CLIProxyAPI"
+  mkdir -p "${BACKUP_DIR}/home/user" "${BACKUP_DIR}/CLIProxyAPI"
 fi
 
 if [[ ${had_auth} -eq 1 ]]; then
-  cp -aL "${AUTH_DIR}" "${BACKUP_DIR}/root/.cli-proxy-api"
-  echo "[cli-proxy-api] Backed up ${AUTH_DIR} to ${BACKUP_DIR}/root/.cli-proxy-api"
+  cp -aL "${AUTH_DIR}" "${BACKUP_DIR}/home/user/.cli-proxy-api"
+  echo "[cli-proxy-api] Backed up ${AUTH_DIR} to ${BACKUP_DIR}/home/user/.cli-proxy-api"
 fi
 
 if [[ ${had_config} -eq 1 ]]; then
