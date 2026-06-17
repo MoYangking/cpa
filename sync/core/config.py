@@ -26,6 +26,7 @@ DEFAULT_TARGETS = (
             [
                 "/home/user/.cli-proxy-api/",
                 "CLIProxyAPI/config.yaml",
+                "data/",
                 "home/user/filebrowser-data/filebrowser.db",
             ]
         ),
@@ -181,6 +182,7 @@ def load_settings() -> Settings:
 def to_abs_under_base(base: str, rel: str) -> str:
     """将 BASE 相对路径转换为绝对路径。
     例如 base='/'，rel='CLIProxyAPI/config.yaml' → '/CLIProxyAPI/config.yaml'
+    例如 base='/'，rel='data/' → '/data'
     若 rel 本身为绝对路径，则直接返回。
     """
     if rel.startswith("/"):

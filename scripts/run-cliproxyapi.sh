@@ -50,7 +50,7 @@ fi
 if [[ -f "${MANAGEMENT_BUNDLED_HTML}" ]]; then
   mkdir -p "${MANAGEMENT_STATIC_DIR}"
   cp -f "${MANAGEMENT_BUNDLED_HTML}" "${MANAGEMENT_STATIC_HTML}"
-  echo "[cli-proxy-api] Installed bundled management panel to ${MANAGEMENT_STATIC_HTML}"
+  echo "[cli-proxy-api] Installed CPA Manager Plus panel to ${MANAGEMENT_STATIC_HTML}"
 fi
 
 cd "${APP_DIR}"

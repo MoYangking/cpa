@@ -40,6 +40,20 @@
             align-items: center;
             gap: 10px;
         }
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-link {
+            color: #409eff;
+            text-decoration: none;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .header-link:hover {
+            color: #79bbff;
+        }
         .el-aside {
             background-color: #1e1e20;
             border-right: 1px solid #363637;
@@ -136,7 +150,8 @@
                         <span>Sync 管理器</span>
                     </div>
                 </div>
-                <div>
+                <div class="header-actions">
+                    <a class="header-link" :href="managerPlusUrl" target="_blank" rel="noreferrer">CPA Manager Plus</a>
                     <el-tag v-if="status.ready" type="success" effect="dark" size="small">就绪</el-tag>
                     <el-tag v-else type="warning" effect="dark" size="small">未就绪</el-tag>
                 </div>
@@ -522,6 +537,10 @@
 
                 const gitLogs = ref([]);
                 const repoFiles = ref([]);
+                const managerPlusUrl = computed(() => {
+                    const { protocol, hostname } = window.location;
+                    return `${protocol}//${hostname}:18317/management.html`;
+                });
 
                 const addLog = (msg) => {
                     const time = new Date().toLocaleTimeString();
@@ -737,6 +756,7 @@
                     lfsScanResult,
                     gitLogs,
                     repoFiles,
+                    managerPlusUrl,
                     handleMenuSelect,
                     loadStatus,
                     doAction,
