@@ -105,7 +105,6 @@ FROM ubuntu:24.04
 
 ARG APT_MIRROR=http://azure.archive.ubuntu.com/ubuntu
 ARG PIP_INDEX_URL=https://pypi.org/simple/
-ARG FILEBROWSER_URL=https://github.com/filebrowser/filebrowser/releases/latest/download/linux-amd64-filebrowser.tar.gz
 ARG GOTTY_VERSION=v1.8.0
 ARG GOTTY_URL=
 
@@ -146,18 +145,6 @@ RUN python3 -m venv "$VIRTUAL_ENV" && \
 
 RUN uv pip install --no-cache-dir --index-url ${PIP_INDEX_URL} fastapi uvicorn httpx
 RUN chown -R 1000:1000 "$VIRTUAL_ENV"
-
-RUN set -eux; \
-    url="${FILEBROWSER_URL}"; \
-    test -n "${url}"; \
-    curl -fL -o /tmp/filebrowser.tar.gz "${url}"; \
-    tar -xzf /tmp/filebrowser.tar.gz -C /tmp; \
-    mv /tmp/filebrowser /home/user/filebrowser; \
-    chmod +x /home/user/filebrowser; \
-    chown 1000:1000 /home/user/filebrowser; \
-    rm -f /tmp/filebrowser.tar.gz; \
-    mkdir -p /home/user/filebrowser-data; \
-    chown -R 1000:1000 /home/user/filebrowser-data
 
 RUN set -eux; \
     url="${GOTTY_URL:-https://github.com/sorenisanerd/gotty/releases/download/${GOTTY_VERSION}/gotty_${GOTTY_VERSION}_linux_amd64.tar.gz}"; \
@@ -212,7 +199,7 @@ ENV GITHUB_REPO="" \
     SYNC_INTERVAL=300 \
     SYNC_WAIT_TIMEOUT=1800 \
     SYNC_PORT=5321 \
-    SYNC_TARGETS="home/user/.cli-proxy-api/ CLIProxyAPI/config.yaml data/ home/user/filebrowser-data/filebrowser.db home/user/cpa-usage-keeper-data/" \
+    SYNC_TARGETS="home/user/.cli-proxy-api/ CLIProxyAPI/config.yaml data/ home/user/cpa-usage-keeper-data/" \
     CLI_PROXY_API_CONFIG_FILE="/CLIProxyAPI/config.yaml" \
     CLI_PROXY_API_INTERNAL_BASE="http://127.0.0.1:8317" \
     HTTP_ADDR="0.0.0.0:18317" \
@@ -228,11 +215,11 @@ ENV GITHUB_REPO="" \
     USAGE_CORS_ORIGINS="*" \
     CPA_USAGE_KEEPER_ENABLED="auto" \
     CPA_USAGE_KEEPER_APP_PORT="8080" \
-    CPA_USAGE_KEEPER_APP_BASE_PATH="" \
+    CPA_USAGE_KEEPER_APP_BASE_PATH="/t" \
     CPA_USAGE_KEEPER_WORK_DIR="/home/user/cpa-usage-keeper-data" \
     CPA_USAGE_KEEPER_AUTH_ENABLED="false" \
     DEPLOY=""
 
-EXPOSE 8317 8085 1455 54545 51121 11451 5321 8888 18080 18317 8080
+EXPOSE 8317 8085 1455 54545 51121 11451 5321 18080 18317 8080
 
 CMD ["supervisord", "-c", "/home/user/supervisord.conf"]
