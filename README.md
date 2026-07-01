@@ -6,7 +6,7 @@
 
 - `CLIProxyAPI`：CPA 本体，提供 OpenAI / Gemini / Claude / Codex 兼容代理接口，默认端口 `8317`
 - `CPA Manager Plus`：新版 CPA 管理面板和 Manager Server，默认端口 `18317`
-- `CPA Usage Keeper`：用量持久化和可视化服务，默认端口 `8080`，默认子路径 `/t/`
+- `CPA Usage Keeper`：用量持久化和可视化服务，默认端口 `8080`
 - `sync`：把关键配置、认证文件和 Plus 数据目录同步到 GitHub 仓库，管理页入口 `5321/sync/`
 - `gotty`：Web 终端，入口 `18080/t/`
 
@@ -21,7 +21,7 @@
 - `8317`：CLIProxyAPI 主接口
 - `8317/management.html`：由 CLIProxyAPI 托管的 CPA Manager Plus 面板，适合纯 CPA 面板模式
 - `18317/management.html`：CPA Manager Plus Manager Server 面板，支持 SQLite 统计、监控、模型价格、API Key 别名等 Plus 功能
-- `8080/t/`：CPA Usage Keeper 用量统计面板；需要设置 `CPA_MANAGEMENT_KEY` 后才会启动
+- `8080`：CPA Usage Keeper 用量统计面板；需要设置 `CPA_MANAGEMENT_KEY` 后才会启动
 - `5321/sync/`：同步管理页
 - `5321/sync/` 中的「CPA 更新」：检查并在线更新 CLIProxyAPI
 - `18080/t/`：Web 终端
@@ -171,12 +171,10 @@ CPA Usage Keeper 相关：
 | `CPA_USAGE_KEEPER_ENABLED` | `auto` | `auto` 时缺少 `CPA_MANAGEMENT_KEY` 会待命；设为 `true` 时缺少密钥会报错退出；设为 `false` 禁用 |
 | `CPA_MANAGEMENT_KEY` | 空 | Keeper 访问 CPA 管理接口的密钥，也是启用 Keeper 的必要配置 |
 | `CPA_USAGE_KEEPER_APP_PORT` | `8080` | Keeper HTTP 监听端口 |
-| `CPA_USAGE_KEEPER_APP_BASE_PATH` | `/t` | Keeper 子路径部署前缀；Koyeb 路由到 `/t/` 时保持默认即可 |
+| `CPA_USAGE_KEEPER_APP_BASE_PATH` | 空 | Keeper 子路径部署前缀；Koyeb 根挂载时保持为空 |
 | `CPA_USAGE_KEEPER_WORK_DIR` | `/home/user/cpa-usage-keeper-data` | Keeper 数据、日志和 SQLite 备份目录；默认已纳入 Git 同步 |
 | `CPA_USAGE_KEEPER_CPA_BASE_URL` | `http://127.0.0.1:8317` | Keeper 在容器内访问 CPA 的地址 |
 | `CPA_USAGE_KEEPER_REDIS_QUEUE_ADDR` | `127.0.0.1:8317` | Keeper 消费用量队列的 RESP 地址 |
-| `CPA_USAGE_KEEPER_WAIT_TIMEOUT` | `20` | Keeper 启动前等待 CLIProxyAPI TCP 端口就绪的最长秒数 |
-| `CPA_USAGE_KEEPER_WAIT_INTERVAL` | `2` | Keeper 等待 CLIProxyAPI 的轮询间隔秒数 |
 | `CPA_USAGE_KEEPER_AUTH_ENABLED` | `false` | 是否启用 Keeper 自带登录保护 |
 | `CPA_USAGE_KEEPER_LOGIN_PASSWORD` | 空 | 启用 Keeper 登录保护时的登录密码 |
 
@@ -212,12 +210,12 @@ docker run -d \
 
 如果你不想启用 GitHub 同步，也可以不设置 `GITHUB_REPO` 和 `GITHUB_PAT`。这时 `5321/sync/` 页面仍可访问，但只提供本地视图和手动操作，不会进行远端同步。
 
-如果暂时没有 `CPA_MANAGEMENT_KEY`，Keeper 会在 `auto` 模式下待命，其他服务不受影响。配置密钥并重启容器后，访问 `8080/t/` 即可打开 Keeper 面板。
+如果暂时没有 `CPA_MANAGEMENT_KEY`，Keeper 会在 `auto` 模式下待命，其他服务不受影响。配置密钥并重启容器后，访问 `8080` 即可打开 Keeper 面板。
 
-如果把 Keeper 路由到公网子路径，例如 `https://moyang.koyeb.app/t/`，需要让 Keeper 的 `APP_BASE_PATH` 与外部路径一致。本镜像默认已经设置：
+如果在 Koyeb 中把 Keeper 改为根路径挂载，保持：
 
 ```bash
--e CPA_USAGE_KEEPER_APP_BASE_PATH="/t"
+-e CPA_USAGE_KEEPER_APP_BASE_PATH=""
 ```
 
-这样登录请求会发到 `/t/api/v1/auth/login`。如果你把 Keeper 挂到根路径，再把 `CPA_USAGE_KEEPER_APP_BASE_PATH` 设为空。
+这样前端会请求 `/api/v1/auth/login`，与根挂载后的 Keeper 后端一致。

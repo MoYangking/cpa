@@ -17,7 +17,7 @@ case "${ENABLED}" in
 esac
 
 export APP_PORT="${CPA_USAGE_KEEPER_APP_PORT:-${APP_PORT:-8080}}"
-export APP_BASE_PATH="${CPA_USAGE_KEEPER_APP_BASE_PATH:-${APP_BASE_PATH:-/t}}"
+export APP_BASE_PATH="${CPA_USAGE_KEEPER_APP_BASE_PATH:-${APP_BASE_PATH:-}}"
 export CPA_BASE_URL="${CPA_USAGE_KEEPER_CPA_BASE_URL:-${CPA_BASE_URL:-http://127.0.0.1:8317}}"
 export CPA_PUBLIC_URL="${CPA_USAGE_KEEPER_CPA_PUBLIC_URL:-${CPA_PUBLIC_URL:-}}"
 export REDIS_QUEUE_ADDR="${CPA_USAGE_KEEPER_REDIS_QUEUE_ADDR:-${REDIS_QUEUE_ADDR:-127.0.0.1:8317}}"
@@ -38,38 +38,6 @@ if [[ -z "${CPA_MANAGEMENT_KEY:-}" ]]; then
   fi
   echo "[cpa-usage-keeper] CPA_MANAGEMENT_KEY is required when CPA_USAGE_KEEPER_ENABLED=${ENABLED}"
   exit 1
-fi
-
-CPA_WAIT_TIMEOUT="${CPA_USAGE_KEEPER_WAIT_TIMEOUT:-20}"
-CPA_WAIT_INTERVAL="${CPA_USAGE_KEEPER_WAIT_INTERVAL:-2}"
-CPA_WAIT_ELAPSED=0
-CPA_HOST_PORT="$(
-  python3 - <<'PY'
-import os
-from urllib.parse import urlparse
-
-base = os.environ.get("CPA_BASE_URL", "http://127.0.0.1:8317")
-parsed = urlparse(base)
-host = parsed.hostname or "127.0.0.1"
-port = parsed.port or (443 if parsed.scheme == "https" else 80)
-print(f"{host} {port}")
-PY
-)"
-read -r CPA_HOST CPA_PORT <<< "${CPA_HOST_PORT}"
-
-echo "[cpa-usage-keeper] Waiting for CLIProxyAPI TCP ${CPA_HOST}:${CPA_PORT}"
-while [[ "${CPA_WAIT_ELAPSED}" -lt "${CPA_WAIT_TIMEOUT}" ]]; do
-  if timeout 2 bash -c "cat < /dev/null > /dev/tcp/${CPA_HOST}/${CPA_PORT}" >/dev/null 2>&1; then
-    echo "[cpa-usage-keeper] CLIProxyAPI TCP port is ready."
-    break
-  fi
-
-  sleep "${CPA_WAIT_INTERVAL}"
-  CPA_WAIT_ELAPSED=$((CPA_WAIT_ELAPSED + CPA_WAIT_INTERVAL))
-done
-
-if [[ "${CPA_WAIT_ELAPSED}" -ge "${CPA_WAIT_TIMEOUT}" ]]; then
-  echo "[cpa-usage-keeper] Timed out waiting for CLIProxyAPI TCP port after ${CPA_WAIT_TIMEOUT}s; starting anyway."
 fi
 
 had_data=0
