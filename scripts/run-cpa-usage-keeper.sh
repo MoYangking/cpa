@@ -40,6 +40,26 @@ if [[ -z "${CPA_MANAGEMENT_KEY:-}" ]]; then
   exit 1
 fi
 
+CPA_WAIT_TIMEOUT="${CPA_USAGE_KEEPER_WAIT_TIMEOUT:-120}"
+CPA_WAIT_INTERVAL="${CPA_USAGE_KEEPER_WAIT_INTERVAL:-2}"
+CPA_WAIT_ELAPSED=0
+CPA_STATUS_URL="${CPA_BASE_URL%/}/status"
+
+echo "[cpa-usage-keeper] Waiting for CLIProxyAPI at ${CPA_STATUS_URL}"
+while [[ "${CPA_WAIT_ELAPSED}" -lt "${CPA_WAIT_TIMEOUT}" ]]; do
+  if curl -fsS --max-time 2 "${CPA_STATUS_URL}" >/dev/null 2>&1; then
+    echo "[cpa-usage-keeper] CLIProxyAPI is ready."
+    break
+  fi
+
+  sleep "${CPA_WAIT_INTERVAL}"
+  CPA_WAIT_ELAPSED=$((CPA_WAIT_ELAPSED + CPA_WAIT_INTERVAL))
+done
+
+if [[ "${CPA_WAIT_ELAPSED}" -ge "${CPA_WAIT_TIMEOUT}" ]]; then
+  echo "[cpa-usage-keeper] Timed out waiting for CLIProxyAPI after ${CPA_WAIT_TIMEOUT}s; starting anyway."
+fi
+
 had_data=0
 if [[ -d "${WORK_DIR}" ]] && find -L "${WORK_DIR}" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
   had_data=1
