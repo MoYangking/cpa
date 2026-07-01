@@ -1,11 +1,12 @@
 # CLIProxyAPI + CPA Manager Plus + Sync Gateway
 
-这个仓库是一个单容器工具集，把 `CLIProxyAPI`、`CPA Manager Plus`、`sync`、`filebrowser` 和 `gotty` 打包在一起，便于一键部署、管理和持久化。
+这个仓库是一个单容器工具集，把 `CLIProxyAPI`、`CPA Manager Plus`、`CPA Usage Keeper`、`sync`、`filebrowser` 和 `gotty` 打包在一起，便于一键部署、管理和持久化。
 
 当前容器内的主要服务：
 
 - `CLIProxyAPI`：CPA 本体，提供 OpenAI / Gemini / Claude / Codex 兼容代理接口，默认端口 `8317`
 - `CPA Manager Plus`：新版 CPA 管理面板和 Manager Server，默认端口 `18317`
+- `CPA Usage Keeper`：用量持久化和可视化服务，默认端口 `8080`
 - `sync`：把关键配置、认证文件和 Plus 数据目录同步到 GitHub 仓库，管理页入口 `5321/sync/`
 - `filebrowser`：文件管理界面，入口 `8888/filebrowser/`
 - `gotty`：Web 终端，入口 `18080/t/`
@@ -14,13 +15,16 @@
 
 - `CLIProxyAPI`: https://github.com/router-for-me/CLIProxyAPI
 - `CPA Manager Plus`: https://github.com/seakee/CPA-Manager-Plus
+- `CPA Usage Keeper`: https://github.com/Willxup/cpa-usage-keeper
 
 ## 入口
 
 - `8317`：CLIProxyAPI 主接口
 - `8317/management.html`：由 CLIProxyAPI 托管的 CPA Manager Plus 面板，适合纯 CPA 面板模式
 - `18317/management.html`：CPA Manager Plus Manager Server 面板，支持 SQLite 统计、监控、模型价格、API Key 别名等 Plus 功能
+- `8080`：CPA Usage Keeper 用量统计面板；需要设置 `CPA_MANAGEMENT_KEY` 后才会启动
 - `5321/sync/`：同步管理页
+- `5321/sync/` 中的「CPA 更新」：检查并在线更新 CLIProxyAPI
 - `8888/filebrowser/`：文件管理
 - `18080/t/`：Web 终端
 
@@ -50,6 +54,44 @@ http://127.0.0.1:8317
 
 管理员密钥来自 `CPA_MANAGER_ADMIN_KEY`，如果未设置，Plus 会在首次启动日志中输出一次 `cmp_admin_...`。
 
+## CLIProxyAPI 版本与在线更新
+
+镜像构建时默认使用：
+
+```text
+CLIPROXYAPI_REF=main
+```
+
+也就是每次 `docker build` 都会从 `router-for-me/CLIProxyAPI` 拉取 `main` 分支当时的最新提交。构建产物会把实际 commit 写入：
+
+```text
+/CLIProxyAPI/version.json
+```
+
+也可以在构建时固定版本，例如：
+
+```bash
+docker build \
+  --build-arg CLIPROXYAPI_REF=v7.2.15 \
+  --build-arg VERSION=7.2.15 \
+  -t cpa-plus-sync:latest .
+```
+
+运行后可以打开 `5321/sync/`，进入「CPA 更新」页在线更新 CLIProxyAPI。它会：
+
+1. 从 GitHub Release 下载 `CLIProxyAPI_<version>_linux_<arch>.tar.gz`
+2. 备份当前 `/CLIProxyAPI/CLIProxyAPI` 到 `/CLIProxyAPI/binary-backups/<timestamp>/`
+3. 替换二进制和 `config.example.yaml`
+4. 通过 supervisor 重启 `cli-proxy-api`
+
+建议为在线更新设置 token：
+
+```bash
+-e CLIPROXY_UPDATE_TOKEN="换成一个长一点的随机密码"
+```
+
+如果设置了 token，页面更新时需要填写该 token。不建议把 `5321/sync/` 直接暴露到公网。
+
 ## 关键备份与持久化
 
 启动 `CLIProxyAPI` 前会自动备份：
@@ -75,6 +117,7 @@ http://127.0.0.1:8317
 - `/CLIProxyAPI/config.yaml`
 - `/data/`
 - `/home/user/filebrowser-data/filebrowser.db`
+- `/home/user/cpa-usage-keeper-data/`
 
 Plus 和旧 CPA-Manager 的备份差异在 `/data/`。灾备时不要只备份单个数据库文件，至少要保留：
 
@@ -106,6 +149,8 @@ CLIProxyAPI 相关：
 | `DEPLOY` | 空 | 传给 `CLIProxyAPI` 的部署模式 |
 | `CLI_PROXY_API_CONFIG_FILE` | `/CLIProxyAPI/config.yaml` | sync 调试页读取的配置文件路径 |
 | `CLI_PROXY_API_INTERNAL_BASE` | `http://127.0.0.1:8317` | sync 调试页探测的内网地址 |
+| `CLIPROXYAPI_REPO` | `https://github.com/router-for-me/CLIProxyAPI` | 在线更新使用的上游仓库 |
+| `CLIPROXY_UPDATE_TOKEN` | 空 | 可选在线更新 token，设置后更新接口必须携带 |
 
 CPA Manager Plus 相关：
 
@@ -121,6 +166,20 @@ CPA Manager Plus 相关：
 | `USAGE_COLLECTOR_MODE` | `auto` | 用量采集模式 |
 | `USAGE_POLL_INTERVAL_MS` | `500` | 队列空闲轮询间隔 |
 | `USAGE_QUERY_LIMIT` | `50000` | 最近事件查询上限 |
+
+CPA Usage Keeper 相关：
+
+| 名称 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CPA_USAGE_KEEPER_ENABLED` | `auto` | `auto` 时缺少 `CPA_MANAGEMENT_KEY` 会待命；设为 `true` 时缺少密钥会报错退出；设为 `false` 禁用 |
+| `CPA_MANAGEMENT_KEY` | 空 | Keeper 访问 CPA 管理接口的密钥，也是启用 Keeper 的必要配置 |
+| `CPA_USAGE_KEEPER_APP_PORT` | `8080` | Keeper HTTP 监听端口 |
+| `CPA_USAGE_KEEPER_APP_BASE_PATH` | 空 | Keeper 子路径部署前缀，例如 `/keeper` |
+| `CPA_USAGE_KEEPER_WORK_DIR` | `/home/user/cpa-usage-keeper-data` | Keeper 数据、日志和 SQLite 备份目录；默认已纳入 Git 同步 |
+| `CPA_USAGE_KEEPER_CPA_BASE_URL` | `http://127.0.0.1:8317` | Keeper 在容器内访问 CPA 的地址 |
+| `CPA_USAGE_KEEPER_REDIS_QUEUE_ADDR` | `127.0.0.1:8317` | Keeper 消费用量队列的 RESP 地址 |
+| `CPA_USAGE_KEEPER_AUTH_ENABLED` | `false` | 是否启用 Keeper 自带登录保护 |
+| `CPA_USAGE_KEEPER_LOGIN_PASSWORD` | 空 | 启用 Keeper 登录保护时的登录密码 |
 
 GoTTY 相关：
 
@@ -142,13 +201,17 @@ docker run -d \
   -p 51121:51121 \
   -p 11451:11451 \
   -p 18317:18317 \
+  -p 8080:8080 \
   -p 5321:5321 \
   -p 8888:8888 \
   -p 18080:18080 \
   -e GITHUB_REPO="<owner>/<repo>" \
   -e GITHUB_PAT="<token>" \
+  -e CPA_MANAGEMENT_KEY="<cpa-management-key>" \
   --name cpa-plus \
   cpa-plus-sync:latest
 ```
 
 如果你不想启用 GitHub 同步，也可以不设置 `GITHUB_REPO` 和 `GITHUB_PAT`。这时 `5321/sync/` 页面仍可访问，但只提供本地视图和手动操作，不会进行远端同步。
+
+如果暂时没有 `CPA_MANAGEMENT_KEY`，Keeper 会在 `auto` 模式下待命，其他服务不受影响。配置密钥并重启容器后，访问 `8080` 即可打开 Keeper 面板。

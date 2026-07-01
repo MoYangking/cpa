@@ -16,6 +16,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /out/CLIProxyAPI \
     ./cmd/server/
 RUN cp /src/config.example.yaml /out/config.example.yaml
+RUN set -eux; \
+    actual_commit="$(git rev-parse HEAD)"; \
+    actual_tag="$(git describe --tags --exact-match 2>/dev/null || true)"; \
+    printf '{\n  "source": "build",\n  "repo": "%s",\n  "ref": "%s",\n  "commit": "%s",\n  "tag": "%s",\n  "version": "%s",\n  "buildDate": "%s"\n}\n' \
+      "${CLIPROXYAPI_REPO}" "${CLIPROXYAPI_REF}" "${actual_commit}" "${actual_tag}" "${VERSION}" "${BUILD_DATE}" \
+      > /out/cliproxyapi-version.json
 
 FROM alpine:3.21 AS cpa-manager-plus-source
 
@@ -55,6 +61,45 @@ RUN go mod download
 RUN CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
     go build -o /out/cpa-manager-plus ./cmd/cpa-manager-plus
 RUN cp /src/apps/manager-server/internal/httpapi/web/management.html /out/management.html
+
+FROM alpine:3.21 AS cpa-usage-keeper-source
+
+ARG CPA_USAGE_KEEPER_REPO=https://github.com/Willxup/cpa-usage-keeper.git
+ARG CPA_USAGE_KEEPER_REF=main
+
+RUN apk add --no-cache ca-certificates git
+
+WORKDIR /src
+RUN git clone --depth 1 --branch "${CPA_USAGE_KEEPER_REF}" "${CPA_USAGE_KEEPER_REPO}" /src
+
+FROM node:22-alpine AS cpa-usage-keeper-web-builder
+
+WORKDIR /app/web
+COPY --from=cpa-usage-keeper-source /src/web/package.json /src/web/package-lock.json ./
+RUN npm ci
+COPY --from=cpa-usage-keeper-source /src/web ./
+RUN npm run build
+
+FROM golang:1.26-alpine AS cpa-usage-keeper-builder
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG CPA_USAGE_KEEPER_VERSION=dev
+
+WORKDIR /src
+RUN apk add --no-cache build-base
+COPY --from=cpa-usage-keeper-source /src/go.mod /src/go.sum ./
+RUN go mod download
+COPY --from=cpa-usage-keeper-source /src/cmd ./cmd
+COPY --from=cpa-usage-keeper-source /src/internal ./internal
+RUN mkdir -p ./web
+COPY --from=cpa-usage-keeper-source /src/web/static.go ./web/static.go
+COPY --from=cpa-usage-keeper-web-builder /app/web/dist ./web/dist
+RUN CGO_ENABLED=1 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" \
+    go build \
+      -ldflags="-s -w -linkmode external -extldflags=-static -X cpa-usage-keeper/internal/version.Version=${CPA_USAGE_KEEPER_VERSION}" \
+      -o /out/cpa-usage-keeper \
+      ./cmd/server/main.go
 
 FROM ubuntu:24.04
 
@@ -126,8 +171,10 @@ RUN set -eux; \
 
 COPY --from=cliproxy-builder /out/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
 COPY --from=cliproxy-builder /out/config.example.yaml /CLIProxyAPI/config.example.yaml
+COPY --from=cliproxy-builder /out/cliproxyapi-version.json /CLIProxyAPI/version.json
 COPY --from=cpa-manager-plus-builder /out/cpa-manager-plus /usr/local/bin/cpa-manager-plus
 COPY --from=cpa-manager-plus-builder /out/management.html /CLIProxyAPI/management.html
+COPY --from=cpa-usage-keeper-builder /out/cpa-usage-keeper /usr/local/bin/cpa-usage-keeper
 
 RUN mkdir -p \
       /CLIProxyAPI/backups \
@@ -135,9 +182,10 @@ RUN mkdir -p \
       /CLIProxyAPI/static \
       /data \
       /home/user/cpa-manager-plus-backups \
+      /home/user/cpa-usage-keeper-data \
       /home/user/.cli-proxy-api \
       /home/user/.sync-backup \
- && chmod +x /CLIProxyAPI/CLIProxyAPI /usr/local/bin/cpa-manager-plus
+ && chmod +x /CLIProxyAPI/CLIProxyAPI /usr/local/bin/cpa-manager-plus /usr/local/bin/cpa-usage-keeper
 
 RUN mkdir -p /home/user/logs && chown -R 1000:1000 /home/user/logs
 COPY --chown=1000:1000 supervisor/supervisord.conf /home/user/supervisord.conf
@@ -148,19 +196,23 @@ RUN chown -R 1000:1000 /home/user/sync
 RUN mkdir -p /home/user/scripts && chown -R 1000:1000 /home/user/scripts
 COPY --chown=1000:1000 scripts/run-cliproxyapi.sh /home/user/scripts/run-cliproxyapi.sh
 COPY --chown=1000:1000 scripts/run-cpa-manager-plus.sh /home/user/scripts/run-cpa-manager-plus.sh
+COPY --chown=1000:1000 scripts/run-cpa-usage-keeper.sh /home/user/scripts/run-cpa-usage-keeper.sh
 COPY --chown=1000:1000 scripts/run-syncd.sh /home/user/scripts/run-syncd.sh
 COPY --chown=1000:1000 scripts/wait-for-sync.sh /home/user/scripts/wait-for-sync.sh
+COPY --chown=1000:1000 scripts/update-cliproxyapi.sh /home/user/scripts/update-cliproxyapi.sh
 RUN sed -i 's/\r$//' /home/user/scripts/*.sh && \
     chmod +x /home/user/scripts/*.sh
 
 ENV GITHUB_REPO="" \
     GITHUB_PAT="" \
+    CLIPROXYAPI_REPO="https://github.com/router-for-me/CLIProxyAPI" \
+    CLIPROXY_UPDATE_TOKEN="" \
     GIT_BRANCH="main" \
     HIST_DIR="/home/user/.sync-backup" \
     SYNC_INTERVAL=300 \
     SYNC_WAIT_TIMEOUT=1800 \
     SYNC_PORT=5321 \
-    SYNC_TARGETS="home/user/.cli-proxy-api/ CLIProxyAPI/config.yaml data/ home/user/filebrowser-data/filebrowser.db" \
+    SYNC_TARGETS="home/user/.cli-proxy-api/ CLIProxyAPI/config.yaml data/ home/user/filebrowser-data/filebrowser.db home/user/cpa-usage-keeper-data/" \
     CLI_PROXY_API_CONFIG_FILE="/CLIProxyAPI/config.yaml" \
     CLI_PROXY_API_INTERNAL_BASE="http://127.0.0.1:8317" \
     HTTP_ADDR="0.0.0.0:18317" \
@@ -174,8 +226,13 @@ ENV GITHUB_REPO="" \
     USAGE_POLL_INTERVAL_MS="500" \
     USAGE_QUERY_LIMIT="50000" \
     USAGE_CORS_ORIGINS="*" \
+    CPA_USAGE_KEEPER_ENABLED="auto" \
+    CPA_USAGE_KEEPER_APP_PORT="8080" \
+    CPA_USAGE_KEEPER_APP_BASE_PATH="" \
+    CPA_USAGE_KEEPER_WORK_DIR="/home/user/cpa-usage-keeper-data" \
+    CPA_USAGE_KEEPER_AUTH_ENABLED="false" \
     DEPLOY=""
 
-EXPOSE 8317 8085 1455 54545 51121 11451 5321 8888 18080 18317
+EXPOSE 8317 8085 1455 54545 51121 11451 5321 8888 18080 18317 8080
 
 CMD ["supervisord", "-c", "/home/user/supervisord.conf"]

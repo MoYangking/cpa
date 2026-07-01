@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 import json
+import subprocess
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -29,6 +30,11 @@ from sync.utils.logging import log, err
 
 CLI_PROXY_API_CONFIG_FILE = os.environ.get("CLI_PROXY_API_CONFIG_FILE", "/CLIProxyAPI/config.yaml")
 CLI_PROXY_API_INTERNAL_BASE = os.environ.get("CLI_PROXY_API_INTERNAL_BASE", "http://127.0.0.1:8317")
+CLI_PROXY_API_BIN = os.environ.get("CLI_PROXY_API_BIN", "/CLIProxyAPI/CLIProxyAPI")
+CLI_PROXY_API_VERSION_FILE = os.environ.get("CLI_PROXY_API_VERSION_FILE", "/CLIProxyAPI/version.json")
+CLIPROXYAPI_REPO = os.environ.get("CLIPROXYAPI_REPO", "https://github.com/router-for-me/CLIProxyAPI").rstrip("/")
+CLIPROXY_UPDATE_SCRIPT = os.environ.get("CLIPROXY_UPDATE_SCRIPT", "/home/user/scripts/update-cliproxyapi.sh")
+CLIPROXY_UPDATE_TOKEN = os.environ.get("CLIPROXY_UPDATE_TOKEN", "")
 
 
 def _mask_value(value: str) -> str:
@@ -329,6 +335,113 @@ def _remote_url(pat: str, repo: str) -> str:
     return f"https://x-access-token:{pat}@github.com/{repo}.git"
 
 
+def _cliproxy_repo_base_url() -> str:
+    repo = CLIPROXYAPI_REPO
+    if repo.startswith("git@github.com:"):
+        repo = f"https://github.com/{repo.removeprefix('git@github.com:')}"
+    return repo.removesuffix(".git")
+
+
+def _cliproxy_repo_git_url() -> str:
+    return f"{_cliproxy_repo_base_url()}.git"
+
+
+def _run_short(cmd: list[str], timeout: int = 20) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _latest_cliproxy_tag() -> str:
+    try:
+        req = urllib.request.Request(
+            f"{_cliproxy_repo_base_url()}/releases/latest",
+            method="HEAD",
+            headers={"User-Agent": "cpa-sync-manager"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            effective_url = resp.geturl()
+        match = re.search(r"/releases/tag/([^/?#]+)", effective_url)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+
+    try:
+        proc = _run_short(
+            ["git", "ls-remote", "--tags", "--sort=v:refname", _cliproxy_repo_git_url(), "refs/tags/v*"],
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            return ""
+        tags = []
+        for line in proc.stdout.splitlines():
+            if "^{}" in line:
+                continue
+            ref = line.split()[-1] if line.split() else ""
+            if ref.startswith("refs/tags/"):
+                tags.append(ref.rsplit("/", 1)[-1])
+        return tags[-1] if tags else ""
+    except Exception:
+        return ""
+
+
+def _cliproxy_main_head() -> str:
+    try:
+        proc = _run_short(["git", "ls-remote", _cliproxy_repo_git_url(), "refs/heads/main"], timeout=15)
+        if proc.returncode != 0:
+            return ""
+        parts = proc.stdout.split()
+        return parts[0] if parts else ""
+    except Exception:
+        return ""
+
+
+def _read_cliproxy_version_file() -> Dict[str, object]:
+    try:
+        with open(CLI_PROXY_API_VERSION_FILE, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+            return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
+def _cliproxy_update_auth(payload: dict, headers: dict) -> bool:
+    expected = CLIPROXY_UPDATE_TOKEN.strip()
+    if not expected:
+        return True
+    supplied = str(payload.get("token") or headers.get("x-update-token") or "").strip()
+    return supplied == expected
+
+
+def _cliproxy_status() -> Dict[str, object]:
+    info = _read_cliproxy_version_file()
+    stat_info = {}
+    try:
+        stat = os.stat(CLI_PROXY_API_BIN)
+        stat_info = {
+            "path": CLI_PROXY_API_BIN,
+            "size": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        }
+    except FileNotFoundError:
+        stat_info = {"path": CLI_PROXY_API_BIN, "missing": True}
+
+    return {
+        "ok": True,
+        "binary": stat_info,
+        "installed": info,
+        "latest_tag": _latest_cliproxy_tag(),
+        "main_head": _cliproxy_main_head(),
+        "update_token_required": bool(CLIPROXY_UPDATE_TOKEN.strip()),
+    }
+
+
 def create_app(daemon=None):
     """创建 FastAPI 应用实例。
 
@@ -388,6 +501,59 @@ def create_app(daemon=None):
             "remote_head": rhead,
             "progress": progress,
         }
+
+    @app.get("/sync/api/cliproxy/status")
+    def api_cliproxy_status():
+        """Return CLIProxyAPI binary and upstream version information."""
+        try:
+            return _cliproxy_status()
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    @app.post("/sync/api/cliproxy/update")
+    async def api_cliproxy_update(request: Request, payload: dict):
+        """Download a CLIProxyAPI release, replace the binary, and restart the service."""
+        payload = payload or {}
+        if not _cliproxy_update_auth(payload, dict(request.headers.items())):
+            return JSONResponse({"ok": False, "error": "Invalid update token"}, status_code=403)
+
+        version = str(payload.get("version", "latest") or "latest").strip()
+        variant = str(payload.get("variant", "") or "").strip()
+        restart = bool(payload.get("restart", True))
+        env = os.environ.copy()
+        env["CLIPROXYAPI_RELEASE_VARIANT"] = "_no-plugin" if variant == "no-plugin" else ""
+        env["CLIPROXYAPI_RESTART_AFTER_UPDATE"] = "true" if restart else "false"
+
+        try:
+            proc = subprocess.run(
+                [CLIPROXY_UPDATE_SCRIPT, version],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=300,
+                check=False,
+                env=env,
+            )
+            status = _cliproxy_status()
+            return {
+                "ok": proc.returncode == 0,
+                "returncode": proc.returncode,
+                "stdout": proc.stdout[-12000:],
+                "stderr": proc.stderr[-12000:],
+                "status": status,
+            }
+        except subprocess.TimeoutExpired as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "CLIProxyAPI update timed out",
+                    "stdout": (e.stdout or "")[-12000:] if isinstance(e.stdout, str) else "",
+                    "stderr": (e.stderr or "")[-12000:] if isinstance(e.stderr, str) else "",
+                },
+                status_code=504,
+            )
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
     @app.get("/sync/api/debug/config-file")
     def api_debug_config_file(raw: bool = False):

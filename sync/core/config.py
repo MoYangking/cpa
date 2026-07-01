@@ -28,6 +28,7 @@ DEFAULT_TARGETS = (
                 "CLIProxyAPI/config.yaml",
                 "data/",
                 "home/user/filebrowser-data/filebrowser.db",
+                "home/user/cpa-usage-keeper-data/",
             ]
         ),
     )

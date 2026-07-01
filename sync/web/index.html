@@ -182,6 +182,10 @@
                             <el-icon><List /></el-icon>
                             <span>Git 日志 & 文件</span>
                         </el-menu-item>
+                        <el-menu-item index="5">
+                            <el-icon><Upload /></el-icon>
+                            <span>CPA 更新</span>
+                        </el-menu-item>
                     </el-menu>
                 </el-aside>
 
@@ -217,6 +221,10 @@
                         <el-menu-item index="4">
                             <el-icon><List /></el-icon>
                             <span>Git 日志 & 文件</span>
+                        </el-menu-item>
+                        <el-menu-item index="5">
+                            <el-icon><Upload /></el-icon>
+                            <span>CPA 更新</span>
                         </el-menu-item>
                     </el-menu>
                 </el-drawer>
@@ -485,6 +493,83 @@
                             </el-col>
                         </el-row>
                     </div>
+
+                    <!-- View 5: CLIProxyAPI Update -->
+                    <div v-if="currentView === '5'">
+                        <el-row :gutter="20">
+                            <el-col :xs="24" :sm="24" :md="12">
+                                <el-card class="mb-4">
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>CLIProxyAPI 版本</span>
+                                            <el-button type="primary" link @click="loadCliproxyStatus"><el-icon><Refresh /></el-icon> 刷新</el-button>
+                                        </div>
+                                    </template>
+                                    <div class="status-item">
+                                        <span class="status-label">当前来源</span>
+                                        <span class="status-value">{{ cliproxyStatus.installed?.source || '-' }}</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">当前版本</span>
+                                        <span class="status-value">{{ cliproxyStatus.installed?.tag || cliproxyStatus.installed?.version || '-' }}</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">构建提交</span>
+                                        <span class="status-value">{{ shortHash(cliproxyStatus.installed?.commit) }}</span>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">最新 Release</span>
+                                        <el-tag type="success" size="small">{{ cliproxyStatus.latest_tag || '-' }}</el-tag>
+                                    </div>
+                                    <div class="status-item">
+                                        <span class="status-label">main HEAD</span>
+                                        <span class="status-value">{{ shortHash(cliproxyStatus.main_head) }}</span>
+                                    </div>
+                                    <el-divider content-position="left">二进制</el-divider>
+                                    <div style="font-size: 12px; color: #999; word-break: break-all;">{{ cliproxyStatus.binary?.path || '-' }}</div>
+                                    <div style="font-size: 12px; color: #999; margin-top: 8px;">更新于：{{ cliproxyStatus.binary?.modified_at || '-' }}</div>
+                                </el-card>
+                            </el-col>
+                            <el-col :xs="24" :sm="24" :md="12">
+                                <el-card>
+                                    <template #header>
+                                        <div class="card-header">
+                                            <span>在线更新</span>
+                                        </div>
+                                    </template>
+                                    <el-alert
+                                        title="更新会备份旧二进制、替换 /CLIProxyAPI/CLIProxyAPI，并重启 cli-proxy-api 进程。"
+                                        type="warning"
+                                        :closable="false"
+                                        class="mb-4"
+                                        show-icon>
+                                    </el-alert>
+                                    <el-form label-position="top">
+                                        <el-form-item label="目标版本">
+                                            <el-input v-model="cliproxyUpdate.version" placeholder="latest 或 v7.2.15" />
+                                        </el-form-item>
+                                        <el-form-item label="Release 包">
+                                            <el-radio-group v-model="cliproxyUpdate.variant">
+                                                <el-radio-button label="">默认</el-radio-button>
+                                                <el-radio-button label="no-plugin">no-plugin</el-radio-button>
+                                            </el-radio-group>
+                                        </el-form-item>
+                                        <el-form-item label="更新 Token" v-if="cliproxyStatus.update_token_required">
+                                            <el-input v-model="cliproxyUpdate.token" type="password" placeholder="CLIPROXY_UPDATE_TOKEN" show-password />
+                                        </el-form-item>
+                                        <el-checkbox v-model="cliproxyUpdate.restart">更新后重启 CLIProxyAPI</el-checkbox>
+                                        <div style="display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap;">
+                                            <el-button type="primary" @click="updateCliproxy" :loading="loading">开始更新</el-button>
+                                            <el-button @click="loadCliproxyStatus" :loading="loading">只检查</el-button>
+                                        </div>
+                                    </el-form>
+                                    <div class="console-output" style="height: 260px; margin-top: 18px;">
+                                        <pre style="white-space: pre-wrap; margin: 0;">{{ cliproxyUpdate.output || '暂无更新输出...' }}</pre>
+                                    </div>
+                                </el-card>
+                            </el-col>
+                        </el-row>
+                    </div>
                 </el-main>
             </el-container>
         </el-container>
@@ -537,6 +622,20 @@
 
                 const gitLogs = ref([]);
                 const repoFiles = ref([]);
+                const cliproxyStatus = reactive({
+                    binary: {},
+                    installed: {},
+                    latest_tag: '',
+                    main_head: '',
+                    update_token_required: false
+                });
+                const cliproxyUpdate = reactive({
+                    version: 'latest',
+                    variant: '',
+                    token: '',
+                    restart: true,
+                    output: ''
+                });
                 const managerPlusUrl = computed(() => {
                     const { protocol, hostname } = window.location;
                     return `${protocol}//${hostname}:18317/management.html`;
@@ -567,6 +666,8 @@
                     } else if (index === '4') {
                         loadGitLogs();
                         loadRepoFiles();
+                    } else if (index === '5') {
+                        loadCliproxyStatus();
                     }
                 };
 
@@ -738,6 +839,56 @@
                     }
                 };
 
+                const loadCliproxyStatus = async () => {
+                    loading.value = true;
+                    try {
+                        const res = await fetch('/sync/api/cliproxy/status');
+                        const data = await res.json();
+                        if (data.ok) {
+                            Object.assign(cliproxyStatus, data);
+                            addLog(`CLIProxyAPI 状态已更新，latest=${data.latest_tag || '-'}`);
+                        } else {
+                            throw new Error(data.error || '状态读取失败');
+                        }
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('获取 CLIProxyAPI 状态失败: ' + e.message);
+                        addLog('CLIProxyAPI 状态失败: ' + e.message);
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const updateCliproxy = async () => {
+                    loading.value = true;
+                    cliproxyUpdate.output = '开始更新 CLIProxyAPI...\n';
+                    addLog(`开始更新 CLIProxyAPI: ${cliproxyUpdate.version || 'latest'}`);
+                    try {
+                        const res = await post('/sync/api/cliproxy/update', {
+                            version: cliproxyUpdate.version || 'latest',
+                            variant: cliproxyUpdate.variant,
+                            token: cliproxyUpdate.token,
+                            restart: cliproxyUpdate.restart
+                        });
+                        cliproxyUpdate.output = [
+                            res.stdout || '',
+                            res.stderr ? `\n[stderr]\n${res.stderr}` : ''
+                        ].join('').trim();
+                        if (res.ok) {
+                            ElementPlus.ElMessage.success('CLIProxyAPI 更新完成');
+                            addLog('CLIProxyAPI 更新完成');
+                            if (res.status) Object.assign(cliproxyStatus, res.status);
+                        } else {
+                            throw new Error(res.error || `更新失败，退出码 ${res.returncode}`);
+                        }
+                    } catch (e) {
+                        ElementPlus.ElMessage.error('CLIProxyAPI 更新失败: ' + e.message);
+                        addLog('CLIProxyAPI 更新失败: ' + e.message);
+                        if (!cliproxyUpdate.output) cliproxyUpdate.output = e.message;
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
                 onMounted(() => {
                     loadStatus();
                 });
@@ -756,6 +907,8 @@
                     lfsScanResult,
                     gitLogs,
                     repoFiles,
+                    cliproxyStatus,
+                    cliproxyUpdate,
                     managerPlusUrl,
                     handleMenuSelect,
                     loadStatus,
@@ -770,6 +923,8 @@
                     lfsList,
                     loadGitLogs,
                     loadRepoFiles,
+                    loadCliproxyStatus,
+                    updateCliproxy,
                     shortHash
                 };
             }
