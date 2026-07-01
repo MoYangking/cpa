@@ -40,15 +40,27 @@ if [[ -z "${CPA_MANAGEMENT_KEY:-}" ]]; then
   exit 1
 fi
 
-CPA_WAIT_TIMEOUT="${CPA_USAGE_KEEPER_WAIT_TIMEOUT:-120}"
+CPA_WAIT_TIMEOUT="${CPA_USAGE_KEEPER_WAIT_TIMEOUT:-20}"
 CPA_WAIT_INTERVAL="${CPA_USAGE_KEEPER_WAIT_INTERVAL:-2}"
 CPA_WAIT_ELAPSED=0
-CPA_STATUS_URL="${CPA_BASE_URL%/}/status"
+CPA_HOST_PORT="$(
+  python3 - <<'PY'
+import os
+from urllib.parse import urlparse
 
-echo "[cpa-usage-keeper] Waiting for CLIProxyAPI at ${CPA_STATUS_URL}"
+base = os.environ.get("CPA_BASE_URL", "http://127.0.0.1:8317")
+parsed = urlparse(base)
+host = parsed.hostname or "127.0.0.1"
+port = parsed.port or (443 if parsed.scheme == "https" else 80)
+print(f"{host} {port}")
+PY
+)"
+read -r CPA_HOST CPA_PORT <<< "${CPA_HOST_PORT}"
+
+echo "[cpa-usage-keeper] Waiting for CLIProxyAPI TCP ${CPA_HOST}:${CPA_PORT}"
 while [[ "${CPA_WAIT_ELAPSED}" -lt "${CPA_WAIT_TIMEOUT}" ]]; do
-  if curl -fsS --max-time 2 "${CPA_STATUS_URL}" >/dev/null 2>&1; then
-    echo "[cpa-usage-keeper] CLIProxyAPI is ready."
+  if timeout 2 bash -c "cat < /dev/null > /dev/tcp/${CPA_HOST}/${CPA_PORT}" >/dev/null 2>&1; then
+    echo "[cpa-usage-keeper] CLIProxyAPI TCP port is ready."
     break
   fi
 
@@ -57,7 +69,7 @@ while [[ "${CPA_WAIT_ELAPSED}" -lt "${CPA_WAIT_TIMEOUT}" ]]; do
 done
 
 if [[ "${CPA_WAIT_ELAPSED}" -ge "${CPA_WAIT_TIMEOUT}" ]]; then
-  echo "[cpa-usage-keeper] Timed out waiting for CLIProxyAPI after ${CPA_WAIT_TIMEOUT}s; starting anyway."
+  echo "[cpa-usage-keeper] Timed out waiting for CLIProxyAPI TCP port after ${CPA_WAIT_TIMEOUT}s; starting anyway."
 fi
 
 had_data=0

@@ -175,7 +175,7 @@ CPA Usage Keeper 相关：
 | `CPA_USAGE_KEEPER_WORK_DIR` | `/home/user/cpa-usage-keeper-data` | Keeper 数据、日志和 SQLite 备份目录；默认已纳入 Git 同步 |
 | `CPA_USAGE_KEEPER_CPA_BASE_URL` | `http://127.0.0.1:8317` | Keeper 在容器内访问 CPA 的地址 |
 | `CPA_USAGE_KEEPER_REDIS_QUEUE_ADDR` | `127.0.0.1:8317` | Keeper 消费用量队列的 RESP 地址 |
-| `CPA_USAGE_KEEPER_WAIT_TIMEOUT` | `120` | Keeper 启动前等待 CLIProxyAPI 就绪的最长秒数 |
+| `CPA_USAGE_KEEPER_WAIT_TIMEOUT` | `20` | Keeper 启动前等待 CLIProxyAPI TCP 端口就绪的最长秒数 |
 | `CPA_USAGE_KEEPER_WAIT_INTERVAL` | `2` | Keeper 等待 CLIProxyAPI 的轮询间隔秒数 |
 | `CPA_USAGE_KEEPER_AUTH_ENABLED` | `false` | 是否启用 Keeper 自带登录保护 |
 | `CPA_USAGE_KEEPER_LOGIN_PASSWORD` | 空 | 启用 Keeper 登录保护时的登录密码 |
